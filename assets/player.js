@@ -30,6 +30,14 @@ function showFatal(text) {
   stage.innerHTML = `<div id="stage-error">${text}</div>`;
 }
 
+function applyLogo(screen) {
+  const img = document.getElementById("signage-logo");
+  if (!img || !screen.logo_path) return;
+  img.src = publicMediaUrl(screen.logo_path);
+  img.className = screen.logo_position === "right" ? "pos-right" : "pos-left";
+  img.style.display = "block";
+}
+
 async function loadScreen() {
   const { data, error } = await db
     .from("screens")
@@ -184,6 +192,8 @@ async function init() {
     showFatal("Screen not found. Check the player link is correct.");
     return;
   }
+
+  applyLogo(screenRow);
 
   playlist = await loadPlaylist(screenRow.id);
   lastTickerText = await loadTickerText(screenRow.id);

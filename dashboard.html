@@ -128,7 +128,102 @@
           </div>
           <div id="mediaMsg" class="msg"></div>
         </div>
+
+        <div class="card">
+          <h2>Corporate logo</h2>
+          <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
+            Upload your logo and choose which top corner it appears in on the screen.
+          </p>
+          <div id="logoPreview"></div>
+          <div class="row" style="margin-top:12px; align-items:center;">
+            <div><input type="file" id="logoFile" accept="image/*"></div>
+            <div>
+              <label for="logoPosition">Corner</label>
+              <select id="logoPosition">
+                <option value="left">Top left</option>
+                <option value="right">Top right</option>
+              </select>
+            </div>
+            <div style="flex:0 0 auto; align-self:flex-end;"><button class="secondary" onclick="uploadLogo()" id="logoUploadBtn">Upload &amp; save</button></div>
+          </div>
+          <div id="logoMsg" class="msg"></div>
+        </div>
       `;
+
+      renderLogoCard();
+    }
+
+    // ---------- Corporate logo ----------
+
+    function renderLogoCard() {
+      document.getElementById("logoPosition").value = currentScreen.logo_position || "left";
+
+      const previewEl = document.getElementById("logoPreview");
+      if (currentScreen.logo_path) {
+        const url = publicMediaUrl(currentScreen.logo_path);
+        previewEl.innerHTML = `
+          <div style="display:flex; align-items:center; gap:14px;">
+            <img src="${url}" alt="Current logo" style="max-height:60px; max-width:180px; background:#f5f2ec; border:1px solid var(--border); border-radius:6px; padding:6px;">
+            <span style="font-size:13px; color:var(--muted);">Currently shown top-${currentScreen.logo_position || "left"}</span>
+            <button class="icon-btn" onclick="removeLogo()">Remove</button>
+          </div>
+        `;
+      } else {
+        previewEl.innerHTML = '<div class="empty">No logo uploaded yet.</div>';
+      }
+    }
+
+    async function uploadLogo() {
+      const fileInput = document.getElementById("logoFile");
+      const position = document.getElementById("logoPosition").value;
+      const msg = document.getElementById("logoMsg");
+      const file = fileInput.files[0];
+
+      if (!file) {
+        // No new file chosen — just update the corner for the existing logo.
+        if (!currentScreen.logo_path) { showMessage(msg, "Choose a logo image first.", true); return; }
+        const { error } = await db.from("screens").update({ logo_position: position }).eq("id", currentScreen.id);
+        if (error) { showMessage(msg, error.message, true); return; }
+        currentScreen.logo_position = position;
+        renderLogoCard();
+        showMessage(msg, "Position updated.", false);
+        return;
+      }
+
+      const btn = document.getElementById("logoUploadBtn");
+      btn.disabled = true;
+      showMessage(msg, "Uploading...", false);
+
+      const oldPath = currentScreen.logo_path;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${myProfile.org_id}/${currentScreen.id}/logo-${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await db.storage.from("media").upload(path, file);
+      if (uploadError) { showMessage(msg, uploadError.message, true); btn.disabled = false; return; }
+
+      const { error: updateError } = await db.from("screens")
+        .update({ logo_path: path, logo_position: position })
+        .eq("id", currentScreen.id);
+      if (updateError) { showMessage(msg, updateError.message, true); btn.disabled = false; return; }
+
+      if (oldPath) await db.storage.from("media").remove([oldPath]);
+
+      currentScreen.logo_path = path;
+      currentScreen.logo_position = position;
+      fileInput.value = "";
+      btn.disabled = false;
+      renderLogoCard();
+      showMessage(msg, "Logo saved.", false);
+    }
+
+    async function removeLogo() {
+      if (!confirm("Remove the logo from this screen?")) return;
+      const path = currentScreen.logo_path;
+      const { error } = await db.from("screens").update({ logo_path: null }).eq("id", currentScreen.id);
+      if (error) { alert(error.message); return; }
+      if (path) await db.storage.from("media").remove([path]);
+      currentScreen.logo_path = null;
+      renderLogoCard();
     }
 
     async function saveSettings() {
