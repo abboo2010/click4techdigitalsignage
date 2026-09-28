@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Signage — Login</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <div class="centerbox">
+    <div class="card login-card">
+      <h1>Digital Signage</h1>
+      <p class="sub">Sign in to manage your screen content</p>
+      <form id="loginForm">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="username">
+        <label for="password">Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+        <div style="margin-top:18px;">
+          <button type="submit" id="loginBtn" style="width:100%;">Sign in</button>
+        </div>
+        <div id="msg" class="msg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/app.js"></script>
+  <script>
+    const form = document.getElementById("loginForm");
+    const msg = document.getElementById("msg");
+    const btn = document.getElementById("loginBtn");
+
+    // If already logged in, skip straight to the right dashboard.
+    (async () => {
+      const { data: { session } } = await db.auth.getSession();
+      if (session) await routeToDashboard();
+    })();
+
+    async function routeToDashboard() {
+      const profile = await getMyProfile();
+      if (!profile) {
+        showMessage(msg, "Your login isn't linked to an account yet. Contact your administrator.", true);
+        await db.auth.signOut();
+        return;
+      }
+      window.location.href = profile.role === "admin" ? "admin.html" : "dashboard.html";
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      showMessage(msg, "", false);
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      if (error) {
+        showMessage(msg, error.message, true);
+        btn.disabled = false;
+        return;
+      }
+      await routeToDashboard();
+      btn.disabled = false;
+    });
+  </script>
+</body>
+</html>

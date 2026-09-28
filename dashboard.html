@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Signage — Dashboard</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Digital Signage</h1>
+    <div>
+      <span class="who" id="whoami"></span>
+      <button class="secondary small" onclick="logout()" style="margin-left:12px;">Log out</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <div class="card" id="screenPicker" style="display:none;">
+      <label for="screenSelect">Screen</label>
+      <select id="screenSelect" onchange="selectScreen(this.value)"></select>
+    </div>
+
+    <div id="mainArea"></div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/app.js"></script>
+  <script>
+    let myProfile = null;
+    let myScreens = [];
+    let currentScreen = null;
+
+    (async () => {
+      const session = await requireSession();
+      if (!session) return;
+      myProfile = await getMyProfile();
+      if (!myProfile) {
+        document.getElementById("mainArea").innerHTML =
+          '<div class="card">Your login isn\'t linked to an organization yet. Contact your administrator.</div>';
+        return;
+      }
+      const { data: { user } } = await db.auth.getUser();
+      document.getElementById("whoami").textContent = user.email;
+
+      const { data: screens, error } = await db
+        .from("screens")
+        .select("*")
+        .eq("org_id", myProfile.org_id)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        document.getElementById("mainArea").innerHTML = '<div class="card">Failed to load: ' + error.message + '</div>';
+        return;
+      }
+      myScreens = screens || [];
+
+      if (!myScreens.length) {
+        document.getElementById("mainArea").innerHTML =
+          '<div class="card">No screen has been set up for your organization yet. Contact your administrator.</div>';
+        return;
+      }
+
+      if (myScreens.length > 1) {
+        const picker = document.getElementById("screenPicker");
+        picker.style.display = "block";
+        document.getElementById("screenSelect").innerHTML =
+          myScreens.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+      }
+
+      selectScreen(myScreens[0].id);
+    })();
+
+    function selectScreen(id) {
+      currentScreen = myScreens.find(s => s.id === id);
+      renderMain();
+      loadTicker();
+      loadMedia();
+    }
+
+    function renderMain() {
+      const playerUrl = window.location.origin + window.location.pathname.replace("dashboard.html", "player.html")
+        + "?screen=" + currentScreen.slug;
+
+      document.getElementById("mainArea").innerHTML = `
+        <div class="card">
+          <h2>${escapeHtml(currentScreen.name)} — player link</h2>
+          <p style="color:var(--muted); font-size:13px; margin-bottom:8px;">Open this address in the browser on the TV / display PC. It always shows your latest content.</p>
+          <div class="link-url">${playerUrl}</div>
+          <button class="small secondary" style="margin-top:10px;" onclick="navigator.clipboard.writeText('${playerUrl}')">Copy link</button>
+        </div>
+
+        <div class="card">
+          <h2>Screen settings</h2>
+          <div class="row">
+            <div>
+              <label for="tickerSpeed">Ticker scroll speed (higher = faster)</label>
+              <input type="number" id="tickerSpeed" value="${currentScreen.ticker_speed}">
+            </div>
+            <div>
+              <label for="imageDuration">Seconds each image stays on screen</label>
+              <input type="number" id="imageDuration" value="${currentScreen.image_duration}">
+            </div>
+            <div style="flex:0 0 auto; align-self:flex-end;">
+              <button onclick="saveSettings()">Save</button>
+            </div>
+          </div>
+          <div id="settingsMsg" class="msg"></div>
+        </div>
+
+        <div class="card">
+          <h2>Scrolling ticker messages</h2>
+          <div id="tickerList" class="empty">Loading...</div>
+          <div class="row" style="margin-top:12px;">
+            <div><input type="text" id="newTicker" placeholder="Type a new message"></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="addTicker()">Add message</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Videos &amp; images</h2>
+          <div id="mediaList" class="empty">Loading...</div>
+          <div class="row" style="margin-top:12px; align-items:center;">
+            <div><input type="file" id="mediaFile" accept="image/*,video/*"></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia()" id="uploadBtn">Upload</button></div>
+          </div>
+          <div id="mediaMsg" class="msg"></div>
+        </div>
+      `;
+    }
+
+    async function saveSettings() {
+      const ticker_speed = parseInt(document.getElementById("tickerSpeed").value, 10) || 340;
+      const image_duration = parseInt(document.getElementById("imageDuration").value, 10) || 8;
+      const msg = document.getElementById("settingsMsg");
+      const { error } = await db.from("screens")
+        .update({ ticker_speed, image_duration })
+        .eq("id", currentScreen.id);
+      if (error) { showMessage(msg, error.message, true); return; }
+      currentScreen.ticker_speed = ticker_speed;
+      currentScreen.image_duration = image_duration;
+      showMessage(msg, "Saved.", false);
+    }
+
+    // ---------- Ticker messages ----------
+
+    async function loadTicker() {
+      const listEl = document.getElementById("tickerList");
+      const { data, error } = await db
+        .from("ticker_messages")
+        .select("*")
+        .eq("screen_id", currentScreen.id)
+        .order("sort_order", { ascending: true });
+      if (error) { listEl.textContent = "Failed to load: " + error.message; return; }
+      if (!data.length) { listEl.innerHTML = '<div class="empty">No messages yet.</div>'; return; }
+
+      listEl.innerHTML = `
+        <table>
+          <thead><tr><th>Message</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            ${data.map(t => `
+              <tr>
+                <td>${escapeHtml(t.message)}</td>
+                <td><span class="pill ${t.active ? 'active' : 'inactive'}">${t.active ? 'Active' : 'Hidden'}</span></td>
+                <td style="text-align:right; white-space:nowrap;">
+                  <button class="icon-btn" onclick="toggleTicker('${t.id}', ${!t.active})">${t.active ? 'Hide' : 'Show'}</button>
+                  <button class="icon-btn" onclick="deleteTicker('${t.id}')">Delete</button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function addTicker() {
+      const input = document.getElementById("newTicker");
+      const message = input.value.trim();
+      if (!message) return;
+      const { error } = await db.from("ticker_messages").insert({
+        screen_id: currentScreen.id, message, active: true, sort_order: Date.now()
+      });
+      if (error) { alert(error.message); return; }
+      input.value = "";
+      await loadTicker();
+    }
+
+    async function toggleTicker(id, active) {
+      await db.from("ticker_messages").update({ active }).eq("id", id);
+      await loadTicker();
+    }
+
+    async function deleteTicker(id) {
+      if (!confirm("Delete this message?")) return;
+      await db.from("ticker_messages").delete().eq("id", id);
+      await loadTicker();
+    }
+
+    // ---------- Media ----------
+
+    async function loadMedia() {
+      const listEl = document.getElementById("mediaList");
+      const { data, error } = await db
+        .from("media_items")
+        .select("*")
+        .eq("screen_id", currentScreen.id)
+        .order("sort_order", { ascending: true });
+      if (error) { listEl.textContent = "Failed to load: " + error.message; return; }
+      if (!data.length) { listEl.innerHTML = '<div class="empty">No videos or images yet.</div>'; return; }
+
+      listEl.innerHTML = `
+        <table>
+          <thead><tr><th>File</th><th>Type</th><th></th></tr></thead>
+          <tbody>
+            ${data.map(m => `
+              <tr>
+                <td>${escapeHtml(m.storage_path.split("/").pop())}</td>
+                <td>${m.type}</td>
+                <td style="text-align:right;"><button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function uploadMedia() {
+      const fileInput = document.getElementById("mediaFile");
+      const msg = document.getElementById("mediaMsg");
+      const file = fileInput.files[0];
+      if (!file) { showMessage(msg, "Choose a file first.", true); return; }
+
+      const btn = document.getElementById("uploadBtn");
+      btn.disabled = true;
+      showMessage(msg, "Uploading...", false);
+
+      const type = file.type.startsWith("video") ? "video" : "image";
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${myProfile.org_id}/${currentScreen.id}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await db.storage.from("media").upload(path, file);
+      if (uploadError) { showMessage(msg, uploadError.message, true); btn.disabled = false; return; }
+
+      const { error: insertError } = await db.from("media_items").insert({
+        screen_id: currentScreen.id, type, storage_path: path, sort_order: Date.now()
+      });
+      if (insertError) { showMessage(msg, insertError.message, true); btn.disabled = false; return; }
+
+      fileInput.value = "";
+      showMessage(msg, "Uploaded.", false);
+      btn.disabled = false;
+      await loadMedia();
+    }
+
+    async function deleteMedia(id, storagePath) {
+      if (!confirm("Delete this file?")) return;
+      await db.storage.from("media").remove([storagePath]);
+      await db.from("media_items").delete().eq("id", id);
+      await loadMedia();
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+    }
+  </script>
+</body>
+</html>

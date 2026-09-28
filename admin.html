@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Signage — Admin</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Digital Signage — Admin</h1>
+    <div>
+      <span class="who" id="whoami"></span>
+      <button class="secondary small" onclick="logout()" style="margin-left:12px;">Log out</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <div class="card">
+      <h2>Add a new client</h2>
+      <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
+        Step 1: create the client's organization here.<br>
+        Step 2: create a screen for them.<br>
+        Step 3: create their login in Supabase (Authentication &rarr; Users &rarr; Add user), then paste that user's UID below to link it to the organization.
+      </p>
+      <div class="row">
+        <div>
+          <label for="orgName">Organization name</label>
+          <input type="text" id="orgName" placeholder="e.g. Sri Subramaniar Alayam">
+        </div>
+        <div style="flex:0 0 auto; align-self:flex-end;">
+          <button onclick="createOrg()">Create organization</button>
+        </div>
+      </div>
+      <div id="orgMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Link a login to a client</h2>
+      <div class="row">
+        <div>
+          <label for="linkUid">User UID (from Supabase Authentication &rarr; Users)</label>
+          <input type="text" id="linkUid" placeholder="e.g. a1b2c3d4-...">
+        </div>
+        <div>
+          <label for="linkOrg">Organization</label>
+          <select id="linkOrg"></select>
+        </div>
+        <div>
+          <label for="linkRole">Role</label>
+          <select id="linkRole">
+            <option value="client">Client</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div style="flex:0 0 auto; align-self:flex-end;">
+          <button onclick="linkUser()">Link login</button>
+        </div>
+      </div>
+      <div id="linkMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Organizations &amp; screens</h2>
+      <div id="orgList" class="empty">Loading...</div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/app.js"></script>
+  <script>
+    let orgsCache = [];
+
+    (async () => {
+      const session = await requireSession();
+      if (!session) return;
+      const profile = await getMyProfile();
+      if (!profile || profile.role !== "admin") {
+        window.location.href = "dashboard.html";
+        return;
+      }
+      const { data: { user } } = await db.auth.getUser();
+      document.getElementById("whoami").textContent = user.email + " (admin)";
+      await loadOrgs();
+    })();
+
+    async function loadOrgs() {
+      const { data: orgs, error } = await db
+        .from("organizations")
+        .select("id, name, slug, created_at, screens(id, name, slug, ticker_speed, image_duration)")
+        .order("created_at", { ascending: false });
+
+      const listEl = document.getElementById("orgList");
+      const selectEl = document.getElementById("linkOrg");
+
+      if (error) {
+        listEl.textContent = "Failed to load: " + error.message;
+        return;
+      }
+
+      orgsCache = orgs || [];
+      selectEl.innerHTML = orgsCache.map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join("");
+
+      if (!orgsCache.length) {
+        listEl.innerHTML = '<div class="empty">No organizations yet — add your first client above.</div>';
+        return;
+      }
+
+      const playerBase = window.location.origin + window.location.pathname.replace("admin.html", "player.html");
+
+      listEl.innerHTML = orgsCache.map(org => {
+        const screensHtml = (org.screens || []).map(s => `
+          <tr>
+            <td>${escapeHtml(s.name)}</td>
+            <td><span class="link-url">${playerBase}?screen=${s.slug}</span></td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button class="small secondary" onclick="copyToClipboard('${playerBase}?screen=${s.slug}')">Copy link</button>
+              <button class="icon-btn" onclick="deleteScreen('${s.id}', '${org.id}')">Delete</button>
+            </td>
+          </tr>
+        `).join("");
+
+        return `
+          <div style="margin-bottom:22px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <h3 style="margin:14px 0 8px;">${escapeHtml(org.name)}</h3>
+              <button class="icon-btn" onclick="deleteOrg('${org.id}', '${escapeHtml(org.name).replace(/'/g, "\\'")}')">Delete organization</button>
+            </div>
+            <table>
+              <thead><tr><th>Screen</th><th>Player link (open this on the TV)</th><th></th></tr></thead>
+              <tbody>${screensHtml || '<tr><td colspan="3" class="empty">No screens yet</td></tr>'}</tbody>
+            </table>
+            <div class="row" style="margin-top:10px;">
+              <div><input type="text" id="newScreen-${org.id}" placeholder="New screen name, e.g. Main Hall"></div>
+              <div style="flex:0 0 auto;"><button class="small secondary" onclick="createScreen('${org.id}')">Add screen</button></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function createOrg() {
+      const nameEl = document.getElementById("orgName");
+      const msg = document.getElementById("orgMsg");
+      const name = nameEl.value.trim();
+      if (!name) { showMessage(msg, "Enter a name first.", true); return; }
+      const slug = slugify(name) + "-" + Math.random().toString(36).slice(2, 6);
+      const { error } = await db.from("organizations").insert({ name, slug });
+      if (error) { showMessage(msg, error.message, true); return; }
+      nameEl.value = "";
+      showMessage(msg, "Organization created.", false);
+      await loadOrgs();
+    }
+
+    async function deleteOrg(orgId, orgName) {
+      if (!confirm(`Delete "${orgName}" and all of its screens, ticker messages and media? This cannot be undone.`)) return;
+      const { error } = await db.from("organizations").delete().eq("id", orgId);
+      if (error) { alert("Delete failed: " + error.message); return; }
+      await loadOrgs();
+    }
+
+    async function createScreen(orgId) {
+      const input = document.getElementById(`newScreen-${orgId}`);
+      const name = input.value.trim();
+      if (!name) return;
+      const slug = slugify(name) + "-" + Math.random().toString(36).slice(2, 6);
+      const { error } = await db.from("screens").insert({ org_id: orgId, name, slug });
+      if (error) { alert(error.message); return; }
+      input.value = "";
+      await loadOrgs();
+    }
+
+    async function deleteScreen(screenId, orgId) {
+      if (!confirm("Delete this screen and all of its ticker messages and media? This cannot be undone.")) return;
+      const { error } = await db.from("screens").delete().eq("id", screenId);
+      if (error) { alert("Delete failed: " + error.message); return; }
+      await loadOrgs();
+    }
+
+    async function linkUser() {
+      const uid = document.getElementById("linkUid").value.trim();
+      const orgId = document.getElementById("linkOrg").value;
+      const role = document.getElementById("linkRole").value;
+      const msg = document.getElementById("linkMsg");
+      if (!uid) { showMessage(msg, "Paste the user's UID first.", true); return; }
+      if (!orgId) { showMessage(msg, "Create an organization first.", true); return; }
+      const { error } = await db.from("profiles").upsert({ id: uid, org_id: orgId, role });
+      if (error) { showMessage(msg, error.message, true); return; }
+      document.getElementById("linkUid").value = "";
+      showMessage(msg, "Login linked. They can now sign in at the login page.", false);
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {}, () => {});
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+    }
+  </script>
+</body>
+</html>

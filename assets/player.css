@@ -1,0 +1,99 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ticker-height: 92px;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+}
+
+#stage {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  bottom: var(--ticker-height);
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+/* Images: blurred, zoomed-in copy fills the screen behind the full,
+   uncropped photo -- no black bars, and nothing is ever cut off. */
+#stage .media-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+#stage .media-frame .bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover;
+  filter: blur(35px) brightness(0.55);
+  transform: scale(1.15);
+}
+#stage .media-frame .fg {
+  position: relative; z-index: 1; width: 100%; height: 100%;
+  object-fit: contain;
+}
+
+#stage-empty, #stage-error {
+  color: #999;
+  font-size: 22px;
+  text-align: center;
+  padding: 0 40px;
+}
+
+#ticker-bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: var(--ticker-height);
+  background: rgba(10, 10, 10, 0.72);
+  border-top: 3px solid #8b1e1e;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  z-index: 10;
+}
+
+#ticker-track {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-shrink: 0;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.ticker-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: #ffffff;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding-right: 80px;
+}
+
+#ticker-track.scrolling {
+  animation-name: scroll-left;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes scroll-left {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
