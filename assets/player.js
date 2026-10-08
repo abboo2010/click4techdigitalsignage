@@ -7,6 +7,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const POLL_INTERVAL_MS = 30000;
+const HEARTBEAT_INTERVAL_MS = 60000;
 const VIDEO_START_FALLBACK_MS = 5000;
 
 const stage = document.getElementById("stage");
@@ -206,6 +207,20 @@ async function init() {
   }
 
   setInterval(pollForUpdates, POLL_INTERVAL_MS);
+
+  // Tell the server this screen is alive, now and every minute.
+  sendHeartbeat();
+  setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+}
+
+// Check-in used for offline alerts. Failures are ignored on purpose:
+// a missed ping must never interrupt what is playing on the screen.
+async function sendHeartbeat() {
+  try {
+    await db.rpc("screen_heartbeat", { p_slug: screenSlug });
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 init();

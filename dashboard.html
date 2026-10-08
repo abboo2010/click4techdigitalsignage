@@ -73,6 +73,17 @@
       selectScreen(myScreens[0].id);
     })();
 
+    // Refresh the online/offline badge every 30 seconds.
+    async function refreshScreenStatus() {
+      if (!currentScreen) return;
+      const { data } = await db.from("screens").select("last_seen_at").eq("id", currentScreen.id).single();
+      if (!data) return;
+      currentScreen.last_seen_at = data.last_seen_at;
+      const el = document.getElementById("screenStatus");
+      if (el) el.innerHTML = statusPillHtml(data.last_seen_at);
+    }
+    setInterval(refreshScreenStatus, 30000);
+
     function selectScreen(id) {
       currentScreen = myScreens.find(s => s.id === id);
       renderMain();
@@ -90,6 +101,9 @@
           <p style="color:var(--muted); font-size:13px; margin-bottom:8px;">Open this address in the browser on the TV / display PC. It always shows your latest content.</p>
           <div class="link-url">${playerUrl}</div>
           <button class="small secondary" style="margin-top:10px;" onclick="navigator.clipboard.writeText('${playerUrl}')">Copy link</button>
+          <div style="margin-top:12px; font-size:13px;">
+            Screen status: <span id="screenStatus">${statusPillHtml(currentScreen.last_seen_at)}</span>
+          </div>
         </div>
 
         <div class="card">

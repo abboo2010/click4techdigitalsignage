@@ -89,7 +89,7 @@
     async function loadOrgs() {
       const { data: orgs, error } = await db
         .from("organizations")
-        .select("id, name, slug, created_at, screens(id, name, slug, ticker_speed, image_duration)")
+        .select("id, name, slug, created_at, screens(id, name, slug, ticker_speed, image_duration, last_seen_at)")
         .order("created_at", { ascending: false });
 
       const listEl = document.getElementById("orgList");
@@ -114,6 +114,7 @@
         const screensHtml = (org.screens || []).map(s => `
           <tr>
             <td>${escapeHtml(s.name)}</td>
+            <td><span class="screen-status" data-screen-id="${s.id}">${statusPillHtml(s.last_seen_at)}</span></td>
             <td><span class="link-url">${playerBase}?screen=${s.slug}</span></td>
             <td style="text-align:right; white-space:nowrap;">
               <button class="small secondary" onclick="copyToClipboard('${playerBase}?screen=${s.slug}')">Copy link</button>
@@ -129,8 +130,8 @@
               <button class="icon-btn" onclick="deleteOrg('${org.id}', '${escapeHtml(org.name).replace(/'/g, "\\'")}')">Delete organization</button>
             </div>
             <table>
-              <thead><tr><th>Screen</th><th>Player link (open this on the TV)</th><th></th></tr></thead>
-              <tbody>${screensHtml || '<tr><td colspan="3" class="empty">No screens yet</td></tr>'}</tbody>
+              <thead><tr><th>Screen</th><th>Status</th><th>Player link (open this on the TV)</th><th></th></tr></thead>
+              <tbody>${screensHtml || '<tr><td colspan="4" class="empty">No screens yet</td></tr>'}</tbody>
             </table>
             <div class="row" style="margin-top:10px;">
               <div><input type="text" id="newScreen-${org.id}" placeholder="New screen name, e.g. Main Hall"></div>
@@ -140,6 +141,17 @@
         `;
       }).join("");
     }
+
+    // Update only the status badges every 30s (does not touch anything you are typing).
+    async function refreshStatuses() {
+      const { data } = await db.from("screens").select("id, last_seen_at");
+      if (!data) return;
+      data.forEach(s => {
+        const el = document.querySelector(`.screen-status[data-screen-id="${s.id}"]`);
+        if (el) el.innerHTML = statusPillHtml(s.last_seen_at);
+      });
+    }
+    setInterval(refreshStatuses, 30000);
 
     async function createOrg() {
       const nameEl = document.getElementById("orgName");
