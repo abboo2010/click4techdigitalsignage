@@ -348,13 +348,17 @@ function showItem(item) {
     const video = document.createElement("video");
     video.src = url;
     video.autoplay = true;
-    video.muted = true;
+    video.muted = false;   // play with sound; falls back to silent if the browser blocks it
     video.playsInline = true;
     video.addEventListener("ended", advance, { once: true });
     video.addEventListener("error", advance, { once: true });
     stage.appendChild(video);
     const fallback = setTimeout(advance, VIDEO_START_FALLBACK_MS);
-    video.play().then(() => clearTimeout(fallback)).catch(() => {});
+    video.play().then(() => clearTimeout(fallback)).catch(() => {
+      // The browser blocked sound before any click: play silently instead.
+      video.muted = true;
+      video.play().then(() => clearTimeout(fallback)).catch(() => {});
+    });
   } else {
     scheduleAdvance(3000);
   }
