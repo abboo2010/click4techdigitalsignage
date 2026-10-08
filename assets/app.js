@@ -3,7 +3,30 @@
 const SUPABASE_URL = "https://ahjinqeknstwucegsotn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoamlucWVrbnN0d3VjZWdzb3RuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5MjUwNzgsImV4cCI6MjEwNDUwMTA3OH0.6NfsD4SxR2f3pkBDrAjBTaE2juXrO85kVXHI7ulxdSk";
 
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// If the login has expired (for example the tab sat idle or the computer slept),
+// renew it and retry the request once instead of failing with "JWT expired".
+async function authFetch(input, init) {
+  let res = await fetch(input, init);
+  const url = typeof input === "string" ? input : input.url;
+  if (res.status === 401 && url.indexOf("/auth/v1/") === -1) {
+    const { data } = await db.auth.refreshSession();
+    if (data && data.session) {
+      const headers = new Headers((init && init.headers) || (typeof input !== "string" ? input.headers : undefined));
+      headers.set("Authorization", "Bearer " + data.session.access_token);
+      res = await fetch(input, Object.assign({}, init, { headers }));
+    } else if (!/index\.html$|\/$/.test(window.location.pathname)) {
+      window.location.href = "index.html";   // could not renew: sign in again
+    }
+  }
+  return res;
+}
+
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { fetch: authFetch } });
+
+// Coming back to a tab that was idle: renew the login straight away.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") db.auth.getSession();
+});
 
 function slugify(text) {
   return text
