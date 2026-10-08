@@ -82,11 +82,30 @@ function currentLayout(screen) {
   return (l === "right" || l === "left" || l === "bottom") ? l : "full";
 }
 
+// Colours and fonts for the ticker and side panel. Returns true if the ticker font changed.
+let lastTickerFont = null;
+function applyStyle(screen) {
+  const st = document.body.style;
+  st.setProperty("--panel", validColor(screen.panel_color, "#8b1e1e"));
+  st.setProperty("--panel-text", validColor(screen.panel_text_color, "#ffffff"));
+  st.setProperty("--panel-font", fontCss(screen.panel_font));
+  if (screen.ticker_bg) st.setProperty("--ticker-bg", validColor(screen.ticker_bg, "#0a0a0a"));
+  st.setProperty("--ticker-color", validColor(screen.ticker_color, "#ffffff"));
+  st.setProperty("--ticker-font", fontCss(screen.ticker_font));
+  const fontId = screen.ticker_font || "default";
+  const changed = lastTickerFont !== null && lastTickerFont !== fontId;
+  lastTickerFont = fontId;
+  if (changed) {
+    // Re-measure the scrolling text once the new font is ready.
+    waitForFont(fontId).then(() => buildTickerTrack(lastTickerText || "Welcome"));
+  }
+}
+
 function applyLayout(screen) {
   layoutNow = currentLayout(screen);
   document.body.classList.remove("layout-right", "layout-left", "layout-bottom", "has-side");
   if (layoutNow !== "full") document.body.classList.add("has-side", "layout-" + layoutNow);
-  document.body.style.setProperty("--panel", /^#[0-9a-fA-F]{6}$/.test(screen.panel_color || "") ? screen.panel_color : "#8b1e1e");
+  applyStyle(screen);
 
   const logo = document.getElementById("side-logo");
   if (screen.logo_path) {
@@ -364,6 +383,7 @@ async function init() {
   playlist = loaded.main;
   sidePlaylist = loaded.side;
   lastTickerText = await loadTickerText(screenRow.id);
+  await waitForFont(screenRow.ticker_font);
   buildTickerTrack(lastTickerText || "Welcome");
 
   if (!isWithinHours(screenRow)) {

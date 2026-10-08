@@ -88,7 +88,8 @@ body.has-side #signage-logo { display: none !important; }
   gap: 1.2vw;
   padding: 1.6vh 1vw;
   background: var(--panel, #8b1e1e);
-  color: #fff;
+  color: var(--panel-text, #fff);
+  font-family: var(--panel-font, inherit);
 }
 #side-logo {
   display: none;
@@ -145,7 +146,7 @@ body.closed.closed-logo #signage-logo.has-logo {
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: var(--ticker-height);
-  background: rgba(10, 10, 10, 0.72);
+  background: var(--ticker-bg, rgba(10, 10, 10, 0.72));
   border-top: 3px solid #8b1e1e;
   overflow: hidden;
   display: flex;
@@ -165,7 +166,8 @@ body.closed.closed-logo #signage-logo.has-logo {
 .ticker-copy {
   display: inline-flex;
   flex-shrink: 0;
-  color: #ffffff;
+  color: var(--ticker-color, #ffffff);
+  font-family: var(--ticker-font, inherit);
   font-size: 30px;
   font-weight: 600;
   letter-spacing: 0.3px;

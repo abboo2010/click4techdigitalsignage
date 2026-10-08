@@ -6,6 +6,7 @@
 <title>Digital Signage — Dashboard</title>
 <link rel="stylesheet" href="assets/app.css">
 <link rel="stylesheet" href="assets/menu.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;600;700&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;600;700&family=Roboto:wght@400;600;700&display=swap">
 </head>
 <body>
   <div class="topbar">
@@ -130,6 +131,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/schedule.js"></script>
+  <script src="assets/fonts.js"></script>
   <script src="assets/menu.js"></script>
   <script src="assets/menu-starters.js"></script>
   <script src="assets/app.js"></script>
@@ -218,6 +220,8 @@
 
         <div class="card" id="layoutCard"></div>
 
+        <div class="card" id="styleCard"></div>
+
         <div class="card">
           <h2>Screen settings</h2>
           <div class="row">
@@ -304,6 +308,7 @@
       renderLogoCard();
       renderHoursCard();
       renderLayoutCard();
+      renderStyleCard();
     }
 
     // ---------- Screen hours ----------
@@ -680,14 +685,101 @@
               <span>${l.note}</span>
             </div>`).join("")}
         </div>
-        <div class="row" style="margin-top:14px; align-items:flex-end;">
-          <div style="flex:0 0 auto;">
-            <label for="panelColor">Panel colour</label>
-            <input type="color" id="panelColor" class="color-input" value="${currentScreen.panel_color || "#8b1e1e"}">
-          </div>
-          <div style="flex:0 0 auto;"><button onclick="saveLayout()">Save layout</button></div>
-        </div>
+        <div style="margin-top:14px;"><button onclick="saveLayout()">Save layout</button></div>
         <div id="layoutMsg" class="msg"></div>`;
+    }
+
+    // ---------- Colours & fonts ----------
+
+    const STYLE_DEFAULTS = {
+      ticker_bg: "#0a0a0a", ticker_color: "#ffffff", ticker_font: "default",
+      panel_color: "#8b1e1e", panel_text_color: "#ffffff", panel_font: "default",
+    };
+
+    function styleVal(k) { return currentScreen[k] || STYLE_DEFAULTS[k]; }
+
+    function fontOptions(selected) {
+      return SIGNAGE_FONTS.map(f =>
+        `<option value="${f.id}" ${f.id === selected ? "selected" : ""} style="font-family:${f.css.replace(/"/g, "'")}">${f.name}</option>`
+      ).join("");
+    }
+
+    function renderStyleCard() {
+      document.getElementById("styleCard").innerHTML = `
+        <h2>Colours &amp; fonts</h2>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
+          Match the screen to your brand. The preview below updates as you change things.
+        </p>
+
+        <h3 style="font-size:14px; margin-bottom:8px;">Ticker (scrolling message bar)</h3>
+        <div class="row" style="align-items:flex-end;">
+          <div style="flex:0 0 auto;"><label for="stTickerBg">Background</label>
+            <input type="color" id="stTickerBg" class="color-input" value="${styleVal("ticker_bg")}" oninput="updateStylePreview()"></div>
+          <div style="flex:0 0 auto;"><label for="stTickerColor">Text colour</label>
+            <input type="color" id="stTickerColor" class="color-input" value="${styleVal("ticker_color")}" oninput="updateStylePreview()"></div>
+          <div><label for="stTickerFont">Font</label>
+            <select id="stTickerFont" onchange="updateStylePreview()">${fontOptions(styleVal("ticker_font"))}</select></div>
+        </div>
+        <div id="stPrevTicker" class="st-prev-ticker">Welcome to our office &bull; Opening hours 8 AM to 6 PM</div>
+
+        <div id="panelStyle" style="display:${(currentScreen.layout || "full") === "full" ? "none" : "block"}; margin-top:18px;">
+          <h3 style="font-size:14px; margin-bottom:8px;">Logo, time &amp; date panel</h3>
+          <div class="row" style="align-items:flex-end;">
+            <div style="flex:0 0 auto;"><label for="stPanelBg">Background</label>
+              <input type="color" id="stPanelBg" class="color-input" value="${styleVal("panel_color")}" oninput="updateStylePreview()"></div>
+            <div style="flex:0 0 auto;"><label for="stPanelText">Time &amp; date colour</label>
+              <input type="color" id="stPanelText" class="color-input" value="${styleVal("panel_text_color")}" oninput="updateStylePreview()"></div>
+            <div><label for="stPanelFont">Font</label>
+              <select id="stPanelFont" onchange="updateStylePreview()">${fontOptions(styleVal("panel_font"))}</select></div>
+          </div>
+          <div id="stPrevPanel" class="st-prev-panel">
+            <div class="st-logo">LOGO</div>
+            <div><div class="st-clock">9:41 PM</div><div class="st-date">Thursday 8 Oct 2026</div></div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px; display:flex; gap:10px;">
+          <button onclick="saveStyle()">Save colours &amp; fonts</button>
+          <button class="secondary" onclick="resetStyle()">Reset to defaults</button>
+        </div>
+        <div id="styleMsg" class="msg"></div>`;
+      updateStylePreview();
+    }
+
+    function updateStylePreview() {
+      const g = id => document.getElementById(id).value;
+      const t = document.getElementById("stPrevTicker");
+      t.style.background = g("stTickerBg");
+      t.style.color = g("stTickerColor");
+      t.style.fontFamily = fontCss(g("stTickerFont"));
+      const p = document.getElementById("stPrevPanel");
+      if (p) {
+        p.style.background = g("stPanelBg");
+        p.style.color = g("stPanelText");
+        p.style.fontFamily = fontCss(g("stPanelFont"));
+      }
+    }
+
+    function resetStyle() {
+      const set = (id, v) => { document.getElementById(id).value = v; };
+      set("stTickerBg", STYLE_DEFAULTS.ticker_bg); set("stTickerColor", STYLE_DEFAULTS.ticker_color); set("stTickerFont", STYLE_DEFAULTS.ticker_font);
+      set("stPanelBg", STYLE_DEFAULTS.panel_color); set("stPanelText", STYLE_DEFAULTS.panel_text_color); set("stPanelFont", STYLE_DEFAULTS.panel_font);
+      updateStylePreview();
+      saveStyle();
+    }
+
+    async function saveStyle() {
+      const msg = document.getElementById("styleMsg");
+      const g = id => document.getElementById(id).value;
+      const fields = {
+        ticker_bg: g("stTickerBg"), ticker_color: g("stTickerColor"), ticker_font: g("stTickerFont"),
+        panel_color: g("stPanelBg"), panel_text_color: g("stPanelText"), panel_font: g("stPanelFont"),
+      };
+      showMessage(msg, "Saving...", false);
+      const { error } = await db.from("screens").update(fields).eq("id", currentScreen.id);
+      if (error) { showMessage(msg, error.message, true); return; }
+      Object.assign(currentScreen, fields);
+      showMessage(msg, "Saved. The screen updates within about 30 seconds.", false);
     }
 
     function pickLayout(id) {
@@ -697,15 +789,14 @@
 
     async function saveLayout() {
       const msg = document.getElementById("layoutMsg");
-      const color = document.getElementById("panelColor").value;
       showMessage(msg, "Saving...", false);
       const { error } = await db.from("screens")
-        .update({ layout: layoutPick, panel_color: color })
+        .update({ layout: layoutPick })
         .eq("id", currentScreen.id);
       if (error) { showMessage(msg, error.message, true); return; }
       currentScreen.layout = layoutPick;
-      currentScreen.panel_color = color;
       document.getElementById("sideCard").style.display = layoutPick === "full" ? "none" : "block";
+      document.getElementById("panelStyle").style.display = layoutPick === "full" ? "none" : "block";
       showMessage(msg, "Saved. The screen switches within about 30 seconds.", false);
     }
 
