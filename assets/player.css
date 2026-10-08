@@ -61,6 +61,18 @@ html, body {
 #signage-logo.pos-left { left: 20px; }
 #signage-logo.pos-right { right: 20px; }
 
+/* Outside the screen's operating hours: dark screen, optionally with the logo. */
+body.closed #stage,
+body.closed #ticker-bar { display: none; }
+body.closed #signage-logo { display: none !important; }
+body.closed.closed-logo #signage-logo.has-logo {
+  display: block !important;
+  top: 50%; left: 50%; right: auto;
+  transform: translate(-50%, -50%);
+  max-height: 40vh; max-width: 60vw;
+  filter: none;
+}
+
 #stage-empty, #stage-error {
   color: #999;
   font-size: 22px;

@@ -22,6 +22,31 @@ let pendingPlaylist = null;
 let currentIndex = 0;
 let lastTickerText = null;
 let totalItems = 0;
+let advanceTimer = null;   // the one pending "go to next item" timer
+let closedNow = false;     // true while outside the screen's operating hours
+
+function scheduleAdvance(ms) {
+  clearTimeout(advanceTimer);
+  advanceTimer = setTimeout(advance, ms);
+}
+
+// Switch between "open" (playing) and "closed" (dark) when the screen's
+// operating hours say so. Called on start and every poll.
+function syncOpenState() {
+  const open = isWithinHours(screenRow);
+  document.body.classList.toggle("closed-logo", !open && screenRow.off_hours_mode === "logo");
+  if (!open && !closedNow) {
+    closedNow = true;
+    clearTimeout(advanceTimer);
+    clearStage();
+    document.body.classList.add("closed");
+    scheduleAdvance(10000);
+  } else if (open && closedNow) {
+    closedNow = false;
+    document.body.classList.remove("closed", "closed-logo");
+    advance();
+  }
+}
 
 function publicMediaUrl(storagePath) {
   const { data } = db.storage.from("media").getPublicUrl(storagePath);
@@ -37,6 +62,7 @@ function applyLogo(screen) {
   if (!img || !screen.logo_path) return;
   img.src = publicMediaUrl(screen.logo_path);
   img.className = screen.logo_position === "right" ? "pos-right" : "pos-left";
+  img.classList.add("has-logo");
   img.style.display = "block";
 }
 
@@ -132,7 +158,7 @@ function showItem(item) {
     frame.appendChild(bg); frame.appendChild(fg);
     stage.appendChild(frame);
     const seconds = item.duration_seconds || (screenRow && screenRow.image_duration) || 8;
-    setTimeout(advance, seconds * 1000);
+    scheduleAdvance(seconds * 1000);
   } else if (item.type === "video") {
     const video = document.createElement("video");
     video.src = url;
@@ -145,11 +171,13 @@ function showItem(item) {
     const fallback = setTimeout(advance, VIDEO_START_FALLBACK_MS);
     video.play().then(() => clearTimeout(fallback)).catch(() => {});
   } else {
-    setTimeout(advance, 3000);
+    scheduleAdvance(3000);
   }
 }
 
 function advance() {
+  clearTimeout(advanceTimer);
+  if (closedNow) { scheduleAdvance(10000); return; }
   if (pendingPlaylist) {
     playlist = pendingPlaylist;
     pendingPlaylist = null;
@@ -160,7 +188,7 @@ function advance() {
 
   if (!playlist.length) {
     showEmptyState();
-    setTimeout(advance, 5000);
+    scheduleAdvance(5000);
     return;
   }
   showItem(playlist[currentIndex]);
@@ -177,6 +205,14 @@ function showEmptyState() {
 }
 
 async function pollForUpdates() {
+  // Pick up changes to the screen's own settings (operating hours, logo...).
+  const freshScreen = await loadScreen();
+  if (freshScreen) {
+    screenRow = freshScreen;
+    applyLogo(screenRow);
+  }
+  syncOpenState();
+
   const [freshPlaylist, freshTicker] = await Promise.all([
     loadPlaylist(screenRow.id),
     loadTickerText(screenRow.id),
@@ -207,7 +243,10 @@ async function init() {
   lastTickerText = await loadTickerText(screenRow.id);
   buildTickerTrack(lastTickerText || "Welcome");
 
-  if (playlist.length) {
+  if (!isWithinHours(screenRow)) {
+    currentIndex = -1;   // so the first item plays when the screen opens
+    syncOpenState();
+  } else if (playlist.length) {
     showItem(playlist[currentIndex]);
   } else {
     showEmptyState();

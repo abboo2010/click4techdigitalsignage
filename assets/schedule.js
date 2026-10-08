@@ -62,6 +62,26 @@ function isScheduledNow(item, now) {
   return true;
 }
 
+// Whole-screen operating hours. Uses the same rules as an item schedule.
+// Returns true when the screen should be showing content right now.
+function isWithinHours(screen, now) {
+  if (!screen || !screen.hours_enabled) return true;
+  return isScheduledNow({
+    schedule_days: screen.hours_days,
+    schedule_start: screen.hours_start,
+    schedule_end: screen.hours_end,
+  }, now);
+}
+
+function hoursSummary(screen) {
+  if (!screen || !screen.hours_enabled) return "Always on";
+  return scheduleSummary({
+    schedule_days: screen.hours_days,
+    schedule_start: screen.hours_start,
+    schedule_end: screen.hours_end,
+  });
+}
+
 // "08:30:00" -> "8:30 AM"
 function formatTime12(t) {
   const total = timeToMinutes(t);

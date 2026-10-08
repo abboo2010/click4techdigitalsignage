@@ -149,6 +149,8 @@
           </div>
         </div>
 
+        <div class="card" id="hoursCard"></div>
+
         <div class="card">
           <h2>Screen settings</h2>
           <div class="row">
@@ -208,7 +210,111 @@
       `;
 
       renderLogoCard();
+      renderHoursCard();
     }
+
+    // ---------- Screen hours ----------
+
+    function renderHoursCard() {
+      const s = currentScreen;
+      document.getElementById("hoursCard").innerHTML = `
+        <h2>Screen hours</h2>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
+          Choose when this screen shows your content. Outside these hours the screen goes dark.
+          All times are Malaysia time.
+        </p>
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <input type="checkbox" id="hrsEnabled" style="width:auto; margin:0;" onchange="toggleHours()">
+          Only show content during set hours
+        </label>
+        <div id="hrsBody">
+          <label>Open on these days (leave all unticked = every day)</label>
+          <div class="day-row">
+            ${[1,2,3,4,5,6,0].map(d =>
+              `<label><input type="checkbox" class="hrsDay" value="${d}"> ${DAY_NAMES[d]}</label>`).join("")}
+          </div>
+          <label>Open from</label>
+          <div class="time-row">${timeSelectsHtml("hrsFrom")}</div>
+          <label>Close at</label>
+          <div class="time-row">${timeSelectsHtml("hrsUntil")}</div>
+          <label>Outside these hours, show</label>
+          <div class="day-row">
+            <label><input type="radio" name="hrsMode" value="black"> Black screen</label>
+            <label><input type="radio" name="hrsMode" value="logo"> My logo on black</label>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <button onclick="saveHours()" id="hrsSaveBtn">Save hours</button>
+          <span id="hrsNow" style="font-size:13px;"></span>
+        </div>
+        <div id="hrsMsg" class="msg"></div>
+      `;
+
+      document.getElementById("hrsEnabled").checked = !!s.hours_enabled;
+      const days = s.hours_days || [];
+      document.querySelectorAll(".hrsDay").forEach(cb => {
+        cb.checked = days.indexOf(parseInt(cb.value, 10)) !== -1;
+      });
+      setTimeOn("hrsFrom", s.hours_start || "08:00:00");
+      setTimeOn("hrsUntil", s.hours_end || "18:00:00");
+      document.querySelector(`input[name="hrsMode"][value="${s.off_hours_mode === "logo" ? "logo" : "black"}"]`).checked = true;
+      toggleHours();
+      updateHoursNow();
+    }
+
+    function toggleHours() {
+      document.getElementById("hrsBody").style.display =
+        document.getElementById("hrsEnabled").checked ? "block" : "none";
+    }
+
+    function updateHoursNow() {
+      const el = document.getElementById("hrsNow");
+      if (!el) return;
+      if (!currentScreen.hours_enabled) {
+        el.innerHTML = '<span class="pill">Always on</span>';
+        return;
+      }
+      const open = isWithinHours(currentScreen);
+      el.innerHTML = `<span class="pill ${open ? "online" : "inactive"}">${open ? "Open now" : "Closed now"}</span>
+        <span style="color:var(--muted);">${escapeHtml(hoursSummary(currentScreen))}</span>`;
+    }
+
+    async function saveHours() {
+      const msg = document.getElementById("hrsMsg");
+      const enabled = document.getElementById("hrsEnabled").checked;
+      let days = Array.from(document.querySelectorAll(".hrsDay"))
+        .filter(cb => cb.checked).map(cb => parseInt(cb.value, 10)).sort();
+      if (days.length === 0 || days.length === 7) days = null;
+      const start = getTimeFrom("hrsFrom");
+      const end = getTimeFrom("hrsUntil");
+      const mode = document.querySelector('input[name="hrsMode"]:checked').value;
+
+      if (enabled && start === end) {
+        showMessage(msg, "'Open from' and 'Close at' cannot be the same time.", true);
+        return;
+      }
+
+      const fields = {
+        hours_enabled: enabled,
+        hours_days: days,
+        hours_start: start,
+        hours_end: end,
+        off_hours_mode: mode,
+      };
+      const btn = document.getElementById("hrsSaveBtn");
+      btn.disabled = true;
+      const { data, error } = await db.from("screens").update(fields).eq("id", currentScreen.id).select();
+      btn.disabled = false;
+      if (error) { showMessage(msg, error.message, true); return; }
+      if (!data || !data.length) { showMessage(msg, "Could not save. Please contact your administrator.", true); return; }
+
+      Object.assign(currentScreen, fields);
+      showMessage(msg, "Saved. The screen picks this up within about 30 seconds.", false);
+      updateHoursNow();
+    }
+
+    // Keep the "Open now / Closed now" badge fresh.
+    setInterval(() => { if (currentScreen) updateHoursNow(); }, 60000);
 
     // ---------- Corporate logo ----------
 
@@ -395,37 +501,45 @@
         `<label><input type="checkbox" class="schedDay" value="${d}"> ${DAY_NAMES[d]}</label>`
       ).join("");
       ["From", "Until"].forEach(which => {
-        const hours = Array.from({length: 12}, (_, i) => i + 1)
-          .map(h => `<option value="${h}">${h}</option>`).join("");
-        const mins = Array.from({length: 12}, (_, i) => i * 5)
-          .map(m => `<option value="${m}">${String(m).padStart(2, "0")}</option>`).join("");
-        document.getElementById("sched" + which).innerHTML = `
-          <select id="sched${which}H">${hours}</select>
-          <span>:</span>
-          <select id="sched${which}M">${mins}</select>
-          <select id="sched${which}AP"><option value="AM">AM</option><option value="PM">PM</option></select>`;
+        document.getElementById("sched" + which).innerHTML = timeSelectsHtml("sched" + which);
       });
     })();
 
-    function setTimeSelects(which, t) {
+    // Hour / minute / AM-PM dropdowns. `prefix` makes the element ids unique.
+    function timeSelectsHtml(prefix) {
+      const hours = Array.from({length: 12}, (_, i) => i + 1)
+        .map(h => `<option value="${h}">${h}</option>`).join("");
+      const mins = Array.from({length: 12}, (_, i) => i * 5)
+        .map(m => `<option value="${m}">${String(m).padStart(2, "0")}</option>`).join("");
+      return `
+        <select id="${prefix}H">${hours}</select>
+        <span>:</span>
+        <select id="${prefix}M">${mins}</select>
+        <select id="${prefix}AP"><option value="AM">AM</option><option value="PM">PM</option></select>`;
+    }
+
+    function setTimeOn(prefix, t) {
       const total = timeToMinutes(t);
       let h = Math.floor(total / 60);
       const m = total % 60;
       const ap = h >= 12 ? "PM" : "AM";
       h = h % 12; if (h === 0) h = 12;
-      document.getElementById("sched" + which + "H").value = String(h);
-      document.getElementById("sched" + which + "M").value = String(m);
-      document.getElementById("sched" + which + "AP").value = ap;
+      document.getElementById(prefix + "H").value = String(h);
+      document.getElementById(prefix + "M").value = String(m);
+      document.getElementById(prefix + "AP").value = ap;
     }
 
-    function getTimeSelects(which) {
-      let h = parseInt(document.getElementById("sched" + which + "H").value, 10);
-      const m = parseInt(document.getElementById("sched" + which + "M").value, 10);
-      const ap = document.getElementById("sched" + which + "AP").value;
+    function getTimeFrom(prefix) {
+      let h = parseInt(document.getElementById(prefix + "H").value, 10);
+      const m = parseInt(document.getElementById(prefix + "M").value, 10);
+      const ap = document.getElementById(prefix + "AP").value;
       if (ap === "AM" && h === 12) h = 0;
       if (ap === "PM" && h !== 12) h += 12;
       return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":00";
     }
+
+    function setTimeSelects(which, t) { setTimeOn("sched" + which, t); }
+    function getTimeSelects(which) { return getTimeFrom("sched" + which); }
 
     function toggleAllDay() {
       document.getElementById("schedTimes").style.display =
