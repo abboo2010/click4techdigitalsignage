@@ -126,6 +126,14 @@ tr:last-child td { border-bottom: none; }
 .time-row { display: flex; align-items: center; gap: 6px; margin: 6px 0 12px; flex-wrap: wrap; }
 .time-row select { width: auto; }
 .time-row .to { color: var(--muted); padding: 0 4px; }
+.hrs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.hrs-day { width: 44px; font-weight: 600; }
+.hrs-open { display: inline-flex; align-items: center; gap: 6px; margin: 0; width: 80px; cursor: pointer; }
+.hrs-open input { width: auto; margin: 0; }
+.hrs-times { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hrs-times .time-row { margin: 0; }
+.hrs-times .to { color: var(--muted); }
+.hrs-closed { color: var(--muted); font-size: 13px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
 
 .link-url { font-family: Consolas, monospace; font-size: 13px; background: #f5f2ec; padding: 6px 8px; border-radius: 5px; word-break: break-all; }

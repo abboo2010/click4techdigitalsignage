@@ -62,10 +62,43 @@ function isScheduledNow(item, now) {
   return true;
 }
 
-// Whole-screen operating hours. Uses the same rules as an item schedule.
+// Whole-screen operating hours.
+// hours_week looks like {"1":{"start":"08:00:00","end":"18:00:00"},"6":{...}}
+// keyed by day number (0 = Sunday ... 6 = Saturday). A missing day = closed.
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+function dayWindow(week, day) {
+  const w = week[day];
+  return (w && w.start && w.end) ? w : null;
+}
+
+function isWithinWeek(week, now) {
+  const n = malaysiaNow(now);
+
+  const today = dayWindow(week, n.day);
+  if (today) {
+    const s = timeToMinutes(today.start), e = timeToMinutes(today.end);
+    if (s < e && n.minutes >= s && n.minutes < e) return true;
+    if (s > e && n.minutes >= s) return true;       // runs past midnight
+    if (s === e) return true;                       // treated as all day
+  }
+
+  // Yesterday's window may run past midnight into today.
+  const prev = dayWindow(week, (n.day + 6) % 7);
+  if (prev) {
+    const s = timeToMinutes(prev.start), e = timeToMinutes(prev.end);
+    if (s > e && n.minutes < e) return true;
+  }
+  return false;
+}
+
 // Returns true when the screen should be showing content right now.
 function isWithinHours(screen, now) {
   if (!screen || !screen.hours_enabled) return true;
+  if (screen.hours_week && typeof screen.hours_week === "object") {
+    return isWithinWeek(screen.hours_week, now);
+  }
+  // Older single-window format (before per-day hours existed).
   return isScheduledNow({
     schedule_days: screen.hours_days,
     schedule_start: screen.hours_start,
@@ -75,11 +108,29 @@ function isWithinHours(screen, now) {
 
 function hoursSummary(screen) {
   if (!screen || !screen.hours_enabled) return "Always on";
-  return scheduleSummary({
-    schedule_days: screen.hours_days,
-    schedule_start: screen.hours_start,
-    schedule_end: screen.hours_end,
+  const week = screen.hours_week;
+  if (!week || typeof week !== "object") {
+    return scheduleSummary({
+      schedule_days: screen.hours_days,
+      schedule_start: screen.hours_start,
+      schedule_end: screen.hours_end,
+    });
+  }
+  const sig = d => {
+    const w = dayWindow(week, d);
+    return w ? formatTime12(w.start) + " – " + formatTime12(w.end) : "Closed";
+  };
+  const groups = [];
+  WEEK_ORDER.forEach(d => {
+    const last = groups[groups.length - 1];
+    if (last && last.sig === sig(d)) last.days.push(d);
+    else groups.push({ sig: sig(d), days: [d] });
   });
+  return groups.map(g => {
+    const first = DAY_NAMES[g.days[0]];
+    const lastDay = DAY_NAMES[g.days[g.days.length - 1]];
+    return (g.days.length === 1 ? first : first + "–" + lastDay) + " " + g.sig;
+  }).join(" · ");
 }
 
 // "08:30:00" -> "8:30 AM"

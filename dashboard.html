@@ -215,12 +215,26 @@
 
     // ---------- Screen hours ----------
 
+    // Build a week from the older single-window settings (or a sensible default).
+    function weekFromScreen(s) {
+      if (s.hours_week && typeof s.hours_week === "object") return s.hours_week;
+      const week = {};
+      if (s.hours_start && s.hours_end) {
+        const days = (s.hours_days && s.hours_days.length) ? s.hours_days : [0,1,2,3,4,5,6];
+        days.forEach(d => { week[d] = { start: s.hours_start, end: s.hours_end }; });
+        return week;
+      }
+      [1,2,3,4,5].forEach(d => { week[d] = { start: "08:00:00", end: "18:00:00" }; });
+      return week;
+    }
+
     function renderHoursCard() {
       const s = currentScreen;
       document.getElementById("hoursCard").innerHTML = `
         <h2>Screen hours</h2>
         <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
-          Choose when this screen shows your content. Outside these hours the screen goes dark.
+          Choose when this screen shows your content, with different hours for each day.
+          Leave a day unticked if the screen is closed that day. Outside these hours the screen goes dark.
           All times are Malaysia time.
         </p>
         <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
@@ -228,15 +242,21 @@
           Only show content during set hours
         </label>
         <div id="hrsBody">
-          <label>Open on these days (leave all unticked = every day)</label>
-          <div class="day-row">
-            ${[1,2,3,4,5,6,0].map(d =>
-              `<label><input type="checkbox" class="hrsDay" value="${d}"> ${DAY_NAMES[d]}</label>`).join("")}
+          ${WEEK_ORDER.map(d => `
+            <div class="hrs-row">
+              <span class="hrs-day">${DAY_NAMES[d]}</span>
+              <label class="hrs-open"><input type="checkbox" id="hrsOpen${d}" onchange="toggleHrsDay(${d})"> Open</label>
+              <span class="hrs-times" id="hrsTimes${d}">
+                <span class="time-row">${timeSelectsHtml("hrs" + d + "From")}</span>
+                <span class="to">to</span>
+                <span class="time-row">${timeSelectsHtml("hrs" + d + "Until")}</span>
+              </span>
+              <span class="hrs-closed" id="hrsClosed${d}">Closed</span>
+            </div>`).join("")}
+          <div style="margin:12px 0 16px; display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="small secondary" onclick="copyMonday(false)">Copy Monday to Mon–Fri</button>
+            <button class="small secondary" onclick="copyMonday(true)">Copy Monday to all days</button>
           </div>
-          <label>Open from</label>
-          <div class="time-row">${timeSelectsHtml("hrsFrom")}</div>
-          <label>Close at</label>
-          <div class="time-row">${timeSelectsHtml("hrsUntil")}</div>
           <label>Outside these hours, show</label>
           <div class="day-row">
             <label><input type="radio" name="hrsMode" value="black"> Black screen</label>
@@ -251,12 +271,15 @@
       `;
 
       document.getElementById("hrsEnabled").checked = !!s.hours_enabled;
-      const days = s.hours_days || [];
-      document.querySelectorAll(".hrsDay").forEach(cb => {
-        cb.checked = days.indexOf(parseInt(cb.value, 10)) !== -1;
+      const week = weekFromScreen(s);
+      WEEK_ORDER.forEach(d => {
+        const w = week[d];
+        const open = !!(w && w.start && w.end);
+        document.getElementById("hrsOpen" + d).checked = open;
+        setTimeOn("hrs" + d + "From", open ? w.start : "08:00:00");
+        setTimeOn("hrs" + d + "Until", open ? w.end : "18:00:00");
+        toggleHrsDay(d);
       });
-      setTimeOn("hrsFrom", s.hours_start || "08:00:00");
-      setTimeOn("hrsUntil", s.hours_end || "18:00:00");
       document.querySelector(`input[name="hrsMode"][value="${s.off_hours_mode === "logo" ? "logo" : "black"}"]`).checked = true;
       toggleHours();
       updateHoursNow();
@@ -265,6 +288,26 @@
     function toggleHours() {
       document.getElementById("hrsBody").style.display =
         document.getElementById("hrsEnabled").checked ? "block" : "none";
+    }
+
+    function toggleHrsDay(d) {
+      const open = document.getElementById("hrsOpen" + d).checked;
+      document.getElementById("hrsTimes" + d).style.display = open ? "inline-flex" : "none";
+      document.getElementById("hrsClosed" + d).style.display = open ? "none" : "inline";
+    }
+
+    // Copy Monday's open/closed state and times onto other days.
+    function copyMonday(allDays) {
+      const open = document.getElementById("hrsOpen1").checked;
+      const from = getTimeFrom("hrs1From");
+      const until = getTimeFrom("hrs1Until");
+      const targets = allDays ? [2,3,4,5,6,0] : [2,3,4,5];
+      targets.forEach(d => {
+        document.getElementById("hrsOpen" + d).checked = open;
+        setTimeOn("hrs" + d + "From", from);
+        setTimeOn("hrs" + d + "Until", until);
+        toggleHrsDay(d);
+      });
     }
 
     function updateHoursNow() {
@@ -282,25 +325,25 @@
     async function saveHours() {
       const msg = document.getElementById("hrsMsg");
       const enabled = document.getElementById("hrsEnabled").checked;
-      let days = Array.from(document.querySelectorAll(".hrsDay"))
-        .filter(cb => cb.checked).map(cb => parseInt(cb.value, 10)).sort();
-      if (days.length === 0 || days.length === 7) days = null;
-      const start = getTimeFrom("hrsFrom");
-      const end = getTimeFrom("hrsUntil");
       const mode = document.querySelector('input[name="hrsMode"]:checked').value;
 
-      if (enabled && start === end) {
-        showMessage(msg, "'Open from' and 'Close at' cannot be the same time.", true);
+      const week = {};
+      for (const d of WEEK_ORDER) {
+        if (!document.getElementById("hrsOpen" + d).checked) continue;
+        const start = getTimeFrom("hrs" + d + "From");
+        const end = getTimeFrom("hrs" + d + "Until");
+        if (start === end) {
+          showMessage(msg, DAY_NAMES[d] + ": 'From' and 'To' cannot be the same time.", true);
+          return;
+        }
+        week[d] = { start, end };
+      }
+      if (enabled && Object.keys(week).length === 0) {
+        showMessage(msg, "Tick at least one day as Open, or untick 'Only show content during set hours'.", true);
         return;
       }
 
-      const fields = {
-        hours_enabled: enabled,
-        hours_days: days,
-        hours_start: start,
-        hours_end: end,
-        off_hours_mode: mode,
-      };
+      const fields = { hours_enabled: enabled, hours_week: week, off_hours_mode: mode };
       const btn = document.getElementById("hrsSaveBtn");
       btn.disabled = true;
       const { data, error } = await db.from("screens").update(fields).eq("id", currentScreen.id).select();
