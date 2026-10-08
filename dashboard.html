@@ -74,6 +74,10 @@
       <h2 id="menuModalTitle">Menu board</h2>
       <div class="menu-edit-grid">
         <div>
+          <div id="starterRow" style="margin-bottom:12px;">
+            <label for="mStarter">Start from a ready-made template</label>
+            <select id="mStarter" onchange="applyStarter(this.value)"></select>
+          </div>
           <div class="row">
             <div>
               <label for="mTitle">Menu title</label>
@@ -127,6 +131,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/schedule.js"></script>
   <script src="assets/menu.js"></script>
+  <script src="assets/menu-starters.js"></script>
   <script src="assets/app.js"></script>
   <script>
     let myProfile = null;
@@ -686,6 +691,11 @@
         };
       }
       menuPreviewPage = 0;
+      // Starter templates are offered only when creating a new menu.
+      const starterSel = document.getElementById("mStarter");
+      starterSel.innerHTML = '<option value="">Blank menu</option>' +
+        MENU_STARTERS.map(x => `<option value="${x.id}">${x.name}</option>`).join("");
+      document.getElementById("starterRow").style.display = existing ? "none" : "block";
       document.getElementById("menuModalTitle").textContent = existing ? "Edit menu board" : "New menu board";
       document.getElementById("mTitle").value = menuDraft.title;
       document.getElementById("mCurrency").value = menuDraft.currency;
@@ -696,6 +706,20 @@
       renderMenuCats();
       document.getElementById("menuModal").classList.add("open");
       renderMenuPreview();
+    }
+
+    function applyStarter(id) {
+      const st = MENU_STARTERS.find(x => x.id === id);
+      if (!st || !menuDraft) return;
+      menuDraft.title = st.title; menuDraft.template = st.template; menuDraft.accent = st.accent;
+      menuDraft.categories = st.categories.map(c => ({
+        name: c.name,
+        items: c.items.map(i => ({ name: i.name, price: i.price || "", desc: i.desc || "", soldOut: false })),
+      }));
+      document.getElementById("mTitle").value = menuDraft.title;
+      document.getElementById("mAccent").value = menuDraft.accent;
+      menuPreviewPage = 0;
+      renderMenuLooks(); renderMenuCats(); refreshMenuPreview();
     }
 
     function closeMenuEditor() {

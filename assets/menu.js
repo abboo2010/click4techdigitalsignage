@@ -63,7 +63,7 @@ function cleanMenuCategories(menu) {
     .filter(c => c.items.length);
 }
 
-function layoutMenu(cats, columns, limit) {
+function layoutMenu(cats, columns, limit, keep) {
   const pages = [];
   const blank = () => ({ columns: Array.from({ length: columns }, () => []) });
   let page = blank(), col = 0, used = 0;
@@ -77,7 +77,7 @@ function layoutMenu(cats, columns, limit) {
   cats.forEach(cat => {
     const heading = () => { page.columns[col].push({ kind: "cat", name: cat.name }); used += MENU_COST.cat; };
     const catCost = MENU_COST.cat + cat.items.reduce((s, i) => s + menuItemCost(i), 0);
-    if (used > 0 && used + catCost > limit && catCost <= limit) {
+    if (keep && used > 0 && used + catCost > limit && catCost <= limit) {
       nextColumn();                       // whole category fits in a fresh column: do not split it
     } else if (used > 0 && used + MENU_COST.cat + menuItemCost(cat.items[0]) > limit) {
       nextColumn();                       // never leave a heading alone at the bottom of a column
@@ -99,13 +99,18 @@ function paginateMenu(menu, w, fullH) {
   if (!cats.length) return [];
   const m = menuMetrics(w, fullH);
 
-  let pages = layoutMenu(cats, m.columns, m.cap);
+  // Prefer keeping each category whole in one column; if that needs more
+  // slides than splitting a category across columns, split instead.
+  let keep = true;
+  let pages = layoutMenu(cats, m.columns, m.cap, true);
+  const split = layoutMenu(cats, m.columns, m.cap, false);
+  if (split.length < pages.length) { pages = split; keep = false; }
 
   // Balance the columns so a short menu is not all squeezed into the first one.
   const total = cats.reduce((sum, c) =>
     sum + MENU_COST.cat + c.items.reduce((s, i) => s + menuItemCost(i), 0), 0);
   const target = Math.min(m.cap, total / (pages.length * m.columns) + MENU_COST.itemDesc);
-  const balanced = layoutMenu(cats, m.columns, target);
+  const balanced = layoutMenu(cats, m.columns, target, keep);
   if (balanced.length <= pages.length) pages = balanced;
   return pages;
 }
