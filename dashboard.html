@@ -205,6 +205,66 @@
       loadMenus();
     }
 
+
+    function downloadWindowsLauncher() {
+      const slug = String(currentScreen.slug).replace(/[^A-Za-z0-9_-]/g, "");
+      const label = String(currentScreen.name).replace(/[^A-Za-z0-9 _-]/g, "");
+      const url = window.location.origin + window.location.pathname.replace("dashboard.html", "player.html") + "?screen=" + slug;
+      const lines = [
+        "@echo off",
+        "setlocal",
+        "rem Click 4 Tech Digital Signage - Windows launcher for screen: " + label,
+        'set "URL=' + url + '"',
+        'set "DIR=%LOCALAPPDATA%\\Click4TechSignage"',
+        'set "SELF=%DIR%\\player-' + slug + '.bat"',
+        'set "STARTUP=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Click4TechSignage-' + slug + '.cmd"',
+        'if /I "%~1"=="uninstall" goto uninstall',
+        'if /I "%~f0"=="%SELF%" goto run',
+        "",
+        ":install",
+        'mkdir "%DIR%" 2>nul',
+        'copy /Y "%~f0" "%SELF%" >nul',
+        '> "%STARTUP%" echo @echo off',
+        '>> "%STARTUP%" echo start "" /min cmd /c ""%SELF%""',
+        "powercfg /change standby-timeout-ac 0 >nul 2>&1",
+        "powercfg /change hibernate-timeout-ac 0 >nul 2>&1",
+        "powercfg /change monitor-timeout-ac 0 >nul 2>&1",
+        "powercfg /change disk-timeout-ac 0 >nul 2>&1",
+        'start "" /min cmd /c ""%SELF%""',
+        "exit /b",
+        "",
+        ":uninstall",
+        'del /Q "%STARTUP%" 2>nul',
+        'del /Q "%SELF%" 2>nul',
+        "echo Auto-start removed. Close the signage window with Alt+F4.",
+        "pause",
+        "exit /b",
+        "",
+        ":run",
+        'set "BROWSER="',
+        'set "KIOSK=--kiosk"',
+        'for %%P in ("%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe" "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe") do if exist %%P if not defined BROWSER (set "BROWSER=%%~P" & set "KIOSK=--kiosk --edge-kiosk-type=fullscreen")',
+        'for %%P in ("%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe" "%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe" "%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe") do if exist %%P if not defined BROWSER (set "BROWSER=%%~P" & set "KIOSK=--kiosk")',
+        "if not defined BROWSER (",
+        "  echo Microsoft Edge or Google Chrome was not found on this PC.",
+        "  pause",
+        "  exit /b 1",
+        ")",
+        "",
+        ":loop",
+        'start /wait "" "%BROWSER%" %KIOSK% "%URL%" --user-data-dir="%DIR%\\browser-' + slug + '" --no-first-run --no-default-browser-check --noerrdialogs --disable-infobars --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required --overscroll-history-navigation=0',
+        "timeout /t 5 /nobreak >nul",
+        "goto loop",
+        ""
+      ];
+      const blob = new Blob([lines.join("\r\n")], { type: "application/octet-stream" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "Start-Signage-" + slug + ".bat";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }
+
     function renderMain() {
       const playerUrl = window.location.origin + window.location.pathname.replace("dashboard.html", "player.html")
         + "?screen=" + currentScreen.slug;
@@ -215,6 +275,8 @@
           <p style="color:var(--muted); font-size:13px; margin-bottom:8px;">Open this address in the browser on the TV / display PC. It always shows your latest content.</p>
           <div class="link-url">${playerUrl}</div>
           <button class="small secondary" style="margin-top:10px;" onclick="navigator.clipboard.writeText('${playerUrl}')">Copy link</button>
+          <button class="small" style="margin-top:10px;" onclick="downloadWindowsLauncher()">Download Windows launcher</button>
+          <p style="color:var(--muted); font-size:12px; margin-top:8px;">For a Windows display PC: run the downloaded file once. It opens this screen full screen, starts it automatically when the PC turns on, reopens it if closed, and stops the PC from sleeping.</p>
           <div style="margin-top:12px; font-size:13px;">
             Screen status: <span id="screenStatus">${statusPillHtml(currentScreen.last_seen_at)}</span>
           </div>

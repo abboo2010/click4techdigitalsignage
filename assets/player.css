@@ -184,3 +184,5 @@ body.closed.closed-logo #signage-logo.has-logo {
   from { transform: translateX(0); }
   to   { transform: translateX(-50%); }
 }
+
+html, body { cursor: none; }
