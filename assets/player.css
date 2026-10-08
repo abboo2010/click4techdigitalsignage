@@ -31,20 +31,23 @@ html, body {
 
 /* Images: blurred, zoomed-in copy fills the screen behind the full,
    uncropped photo -- no black bars, and nothing is ever cut off. */
-#stage .media-frame {
+#stage .media-frame,
+#side-zone .media-frame {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: #000;
 }
-#stage .media-frame .bg {
+#stage .media-frame .bg,
+#side-zone .media-frame .bg {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover;
   filter: blur(35px) brightness(0.55);
   transform: scale(1.15);
 }
-#stage .media-frame .fg {
+#stage .media-frame .fg,
+#side-zone .media-frame .fg {
   position: relative; z-index: 1; width: 100%; height: 100%;
   object-fit: contain;
 }
@@ -60,6 +63,63 @@ html, body {
 }
 #signage-logo.pos-left { left: 20px; }
 #signage-logo.pos-right { right: 20px; }
+
+/* ---------- Layouts: main area + side panel ----------
+ * body.layout-right / layout-left / layout-bottom is set by player.js.
+ * Full screen (no class) is exactly the original look. */
+#side { display: none; }
+
+body.has-side { --side-w: 26vw; --strip-h: 27vh; }
+body.has-side #side {
+  display: flex;
+  position: absolute;
+  z-index: 5;
+  background: #0b0b0d;
+  overflow: hidden;
+}
+body.has-side #signage-logo { display: none !important; }
+
+#side-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 1.2vh;
+  padding: 3vh 1.5vw;
+  background: var(--panel, #8b1e1e);
+  color: #fff;
+}
+#side-logo {
+  display: none;
+  max-width: 82%;
+  max-height: 16vh;
+  object-fit: contain;
+}
+#side-logo.show { display: block; }
+#side-name { font-size: 2vw; font-weight: 700; line-height: 1.15; }
+#side-name:empty { display: none; }
+#side-clock { font-size: 4.2vw; font-weight: 700; line-height: 1; letter-spacing: 0.02em; }
+#side-date { font-size: 1.5vw; opacity: 0.9; }
+#side-zone { flex: 1; min-height: 0; min-width: 0; position: relative; background: #101014; }
+#side-zone .media-frame { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+body.layout-right #stage { right: var(--side-w); }
+body.layout-right #side  { top: 0; right: 0; bottom: var(--ticker-height); width: var(--side-w); flex-direction: column; }
+
+body.layout-left #stage  { left: var(--side-w); }
+body.layout-left #side   { top: 0; left: 0; bottom: var(--ticker-height); width: var(--side-w); flex-direction: column; }
+
+body.layout-bottom #stage { bottom: calc(var(--ticker-height) + var(--strip-h)); }
+body.layout-bottom #side  { left: 0; right: 0; bottom: var(--ticker-height); height: var(--strip-h); flex-direction: row; }
+body.layout-bottom #side-head { width: 30vw; padding: 1vh 1.5vw; gap: 0.6vh; }
+body.layout-bottom #side-logo { max-height: 9vh; }
+body.layout-bottom #side-name { font-size: 1.6vw; }
+body.layout-bottom #side-clock { font-size: 3.6vw; }
+body.layout-bottom #side-date { font-size: 1.3vw; }
+
+body.closed #side { display: none !important; }
 
 /* Outside the screen's operating hours: dark screen, optionally with the logo. */
 body.closed #stage,

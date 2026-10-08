@@ -216,6 +216,8 @@
 
         <div class="card" id="hoursCard"></div>
 
+        <div class="card" id="layoutCard"></div>
+
         <div class="card">
           <h2>Screen settings</h2>
           <div class="row">
@@ -248,9 +250,22 @@
           <div id="mediaList" class="empty">Loading...</div>
           <div class="row" style="margin-top:12px; align-items:center;">
             <div><input type="file" id="mediaFile" accept="image/*,video/*"></div>
-            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia()" id="uploadBtn">Upload</button></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('main')" id="uploadBtn">Upload</button></div>
           </div>
           <div id="mediaMsg" class="msg"></div>
+        </div>
+
+        <div class="card" id="sideCard" style="display:${(currentScreen.layout || 'full') === 'full' ? 'none' : 'block'};">
+          <h2>Side panel images</h2>
+          <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
+            These images rotate in the side panel, separately from the main area. Good for notices, promotions or staff photos.
+          </p>
+          <div id="sideList" class="empty">Loading...</div>
+          <div class="row" style="margin-top:12px; align-items:center;">
+            <div><input type="file" id="sideFile" accept="image/*"></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('side')" id="sideUploadBtn">Upload</button></div>
+          </div>
+          <div id="sideMsg" class="msg"></div>
         </div>
 
         <div class="card" id="menuCard">
@@ -288,6 +303,7 @@
 
       renderLogoCard();
       renderHoursCard();
+      renderLayoutCard();
     }
 
     // ---------- Screen hours ----------
@@ -587,13 +603,15 @@
         .order("sort_order", { ascending: true });
       if (error) { listEl.textContent = "Failed to load: " + error.message; return; }
       mediaCache = data;
-      if (!data.length) { listEl.innerHTML = '<div class="empty">No videos or images yet.</div>'; return; }
+      renderSideList(data.filter(m => m.zone === "side"));
+      const mainItems = data.filter(m => m.zone !== "side");
+      if (!mainItems.length) { listEl.innerHTML = '<div class="empty">No videos or images yet.</div>'; return; }
 
       listEl.innerHTML = `
         <table>
           <thead><tr><th>File</th><th>Type</th><th>Schedule</th><th></th></tr></thead>
           <tbody>
-            ${data.map(m => `
+            ${mainItems.map(m => `
               <tr>
                 <td>${escapeHtml(m.storage_path.split("/").pop())}</td>
                 <td>${m.type}</td>
@@ -610,6 +628,85 @@
           </tbody>
         </table>
       `;
+    }
+
+    function renderSideList(items) {
+      const el = document.getElementById("sideList");
+      if (!el) return;
+      if (!items.length) { el.innerHTML = '<div class="empty">No side panel images yet.</div>'; return; }
+      el.innerHTML = `
+        <table>
+          <thead><tr><th>Image</th><th>Schedule</th><th></th></tr></thead>
+          <tbody>
+            ${items.map(m => `
+              <tr>
+                <td>${escapeHtml(m.storage_path.split("/").pop())}</td>
+                <td style="font-size:13px;">
+                  ${escapeHtml(scheduleSummary(m))}
+                  ${hasSchedule(m) ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : ''}
+                </td>
+                <td style="text-align:right; white-space:nowrap;">
+                  <button class="icon-btn" onclick="openSchedule('${m.id}')">Schedule</button>
+                  <button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button>
+                </td>
+              </tr>`).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    // ---------- Screen layout ----------
+
+    const LAYOUTS = [
+      { id: "full",   name: "Full screen",           note: "Videos and images fill the whole screen." },
+      { id: "right",  name: "Main + right panel",    note: "Logo, clock and side images on the right. Good for offices and clinics." },
+      { id: "left",   name: "Main + left panel",     note: "Same, with the panel on the left." },
+      { id: "bottom", name: "Main + bottom strip",   note: "Logo, clock and side images in a strip under the main area." },
+    ];
+    let layoutPick = "full";
+
+    function renderLayoutCard() {
+      layoutPick = currentScreen.layout || "full";
+      document.getElementById("layoutCard").innerHTML = `
+        <h2>Screen layout</h2>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
+          Choose how the screen is divided. The panel shows your logo (or the screen name), the live clock and date in Malaysia time,
+          and its own rotating images. The ticker stays at the bottom.
+        </p>
+        <div class="layout-grid">
+          ${LAYOUTS.map(l => `
+            <div class="layout-tile ${layoutPick === l.id ? "selected" : ""}" data-layout="${l.id}" onclick="pickLayout('${l.id}')">
+              <div class="lt-diagram lt-${l.id}"><i class="m">Main</i><i class="h"></i><i class="z"></i><i class="t"></i></div>
+              <b>${l.name}</b>
+              <span>${l.note}</span>
+            </div>`).join("")}
+        </div>
+        <div class="row" style="margin-top:14px; align-items:flex-end;">
+          <div style="flex:0 0 auto;">
+            <label for="panelColor">Panel colour</label>
+            <input type="color" id="panelColor" class="color-input" value="${currentScreen.panel_color || "#8b1e1e"}">
+          </div>
+          <div style="flex:0 0 auto;"><button onclick="saveLayout()">Save layout</button></div>
+        </div>
+        <div id="layoutMsg" class="msg"></div>`;
+    }
+
+    function pickLayout(id) {
+      layoutPick = id;
+      document.querySelectorAll(".layout-tile").forEach(t => t.classList.toggle("selected", t.dataset.layout === id));
+    }
+
+    async function saveLayout() {
+      const msg = document.getElementById("layoutMsg");
+      const color = document.getElementById("panelColor").value;
+      showMessage(msg, "Saving...", false);
+      const { error } = await db.from("screens")
+        .update({ layout: layoutPick, panel_color: color })
+        .eq("id", currentScreen.id);
+      if (error) { showMessage(msg, error.message, true); return; }
+      currentScreen.layout = layoutPick;
+      currentScreen.panel_color = color;
+      document.getElementById("sideCard").style.display = layoutPick === "full" ? "none" : "block";
+      showMessage(msg, "Saved. The screen switches within about 30 seconds.", false);
     }
 
     // ---------- Menu boards ----------
@@ -1031,13 +1128,18 @@
       if (currentScreen && !document.getElementById("scheduleModal").classList.contains("open")) { loadMedia(); loadMenus(); }
     }, 60000);
 
-    async function uploadMedia() {
-      const fileInput = document.getElementById("mediaFile");
-      const msg = document.getElementById("mediaMsg");
+    async function uploadMedia(zone) {
+      zone = zone === "side" ? "side" : "main";
+      const ids = zone === "side"
+        ? { file: "sideFile", msg: "sideMsg", btn: "sideUploadBtn" }
+        : { file: "mediaFile", msg: "mediaMsg", btn: "uploadBtn" };
+      const fileInput = document.getElementById(ids.file);
+      const msg = document.getElementById(ids.msg);
       const file = fileInput.files[0];
       if (!file) { showMessage(msg, "Choose a file first.", true); return; }
+      if (zone === "side" && !file.type.startsWith("image")) { showMessage(msg, "The side panel shows images only.", true); return; }
 
-      const btn = document.getElementById("uploadBtn");
+      const btn = document.getElementById(ids.btn);
       btn.disabled = true;
       showMessage(msg, "Uploading...", false);
 
@@ -1048,9 +1150,9 @@
       const { error: uploadError } = await db.storage.from("media").upload(path, file);
       if (uploadError) { showMessage(msg, uploadError.message, true); btn.disabled = false; return; }
 
-      const { error: insertError } = await db.from("media_items").insert({
-        screen_id: currentScreen.id, type, storage_path: path, sort_order: Date.now()
-      });
+      const row = { screen_id: currentScreen.id, type, storage_path: path, sort_order: Date.now() };
+      if (zone === "side") row.zone = "side";
+      const { error: insertError } = await db.from("media_items").insert(row);
       if (insertError) { showMessage(msg, insertError.message, true); btn.disabled = false; return; }
 
       fileInput.value = "";

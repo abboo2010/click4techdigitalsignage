@@ -24,6 +24,12 @@ let lastTickerText = null;
 let totalItems = 0;
 let advanceTimer = null;   // the one pending "go to next item" timer
 let closedNow = false;     // true while outside the screen's operating hours
+let sidePlaylist = [];     // images for the side panel (sidebar / bottom-strip layouts)
+let pendingSide = null;
+let sideIndex = -1;
+let sideTimer = null;
+let clockTimer = null;
+let layoutNow = "full";
 
 function scheduleAdvance(ms) {
   clearTimeout(advanceTimer);
@@ -38,6 +44,7 @@ function syncOpenState() {
   if (!open && !closedNow) {
     closedNow = true;
     clearTimeout(advanceTimer);
+    clearTimeout(sideTimer);
     clearStage();
     document.body.classList.add("closed");
     scheduleAdvance(10000);
@@ -45,6 +52,8 @@ function syncOpenState() {
     closedNow = false;
     document.body.classList.remove("closed", "closed-logo");
     advance();
+    sideIndex = -1;
+    showSideItem();
   }
 }
 
@@ -66,6 +75,74 @@ function applyLogo(screen) {
   img.style.display = "block";
 }
 
+// ---------- Layout: main area + side panel ----------
+
+function currentLayout(screen) {
+  const l = screen && screen.layout;
+  return (l === "right" || l === "left" || l === "bottom") ? l : "full";
+}
+
+function applyLayout(screen) {
+  layoutNow = currentLayout(screen);
+  document.body.classList.remove("layout-right", "layout-left", "layout-bottom", "has-side");
+  if (layoutNow !== "full") document.body.classList.add("has-side", "layout-" + layoutNow);
+  document.body.style.setProperty("--panel", /^#[0-9a-fA-F]{6}$/.test(screen.panel_color || "") ? screen.panel_color : "#8b1e1e");
+
+  const logo = document.getElementById("side-logo");
+  if (screen.logo_path) {
+    logo.src = publicMediaUrl(screen.logo_path);
+    logo.classList.add("show");
+  } else {
+    logo.classList.remove("show");
+  }
+  // Without a logo, show the screen's name instead.
+  document.getElementById("side-name").textContent = screen.logo_path ? "" : (screen.name || "");
+
+  clearInterval(clockTimer);
+  if (layoutNow !== "full") { updateClock(); clockTimer = setInterval(updateClock, 5000); }
+}
+
+// Live clock in Malaysia time.
+function updateClock() {
+  const now = new Date();
+  document.getElementById("side-clock").textContent =
+    new Intl.DateTimeFormat("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "numeric", minute: "2-digit", hour12: true })
+      .format(now).replace(/\s?(am|pm)/i, (m, ap) => " " + ap.toUpperCase());
+  document.getElementById("side-date").textContent =
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", weekday: "long", day: "numeric", month: "short", year: "numeric" })
+      .format(now);
+}
+
+function showSideItem() {
+  clearTimeout(sideTimer);
+  const zone = document.getElementById("side-zone");
+  if (layoutNow === "full" || closedNow) return;
+
+  if (pendingSide) { sidePlaylist = pendingSide; pendingSide = null; sideIndex = -1; }
+  zone.innerHTML = "";
+  if (!sidePlaylist.length) { sideTimer = setTimeout(showSideItem, 5000); return; }
+
+  sideIndex = (sideIndex + 1) % sidePlaylist.length;
+  const item = sidePlaylist[sideIndex];
+  const url = publicMediaUrl(item.storage_path);
+  const frame = document.createElement("div");
+  frame.className = "media-frame";
+  const bg = document.createElement("img");
+  bg.className = "bg"; bg.src = url; bg.alt = "";
+  const fg = document.createElement("img");
+  fg.className = "fg"; fg.src = url; fg.alt = "";
+  frame.appendChild(bg); frame.appendChild(fg);
+  zone.appendChild(frame);
+  const seconds = item.duration_seconds || (screenRow && screenRow.image_duration) || 8;
+  sideTimer = setTimeout(showSideItem, seconds * 1000);
+}
+
+// Size of the main area, so menu boards fit it whatever the layout.
+function mainAreaSize() {
+  const st = document.getElementById("stage");
+  return { w: st.clientWidth || window.innerWidth, fullH: (st.clientHeight || window.innerHeight) + MENU_TICKER_H };
+}
+
 async function loadScreen() {
   const { data, error } = await db
     .from("screens")
@@ -82,8 +159,10 @@ async function loadPlaylist(screenId) {
     // If menu boards have not been set up yet this simply returns nothing.
     db.from("menu_boards").select("*").eq("screen_id", screenId),
   ]);
-  if (mediaRes.error) return [];
-  const media = mediaRes.data || [];
+  if (mediaRes.error) return { main: [], side: [] };
+  const allMedia = mediaRes.data || [];
+  const media = allMedia.filter(m => m.zone !== "side");
+  const sideMedia = allMedia.filter(m => m.zone === "side" && m.type === "image");
   const menus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
 
   // Remember how many items exist, so the empty screen can say whether
@@ -95,7 +174,8 @@ async function loadPlaylist(screenId) {
 
   // A menu board becomes one or more full-screen slides.
   menus.filter(menu => isScheduledNow(menu)).forEach(menu => {
-    const pages = paginateMenu(menu, window.innerWidth, window.innerHeight);
+    const size = mainAreaSize();
+    const pages = paginateMenu(menu, size.w, size.fullH);
     pages.forEach((page, i) => {
       entries.push({
         type: "menu_page",
@@ -112,7 +192,7 @@ async function loadPlaylist(screenId) {
 
   // Same order the client sees on the dashboard (menus and files mixed by when they were added).
   entries.sort((a, b) => ((a.sort_order || 0) - (b.sort_order || 0)) || ((a.pageNo || 0) - (b.pageNo || 0)));
-  return entries;
+  return { main: entries, side: sideMedia.filter(item => isScheduledNow(item)) };
 }
 
 async function loadTickerText(screenId) {
@@ -174,9 +254,10 @@ function showItem(item) {
   clearStage();
   const url = item.storage_path ? publicMediaUrl(item.storage_path) : null;
   if (item.type === "menu_page") {
+    const size = mainAreaSize();
     stage.appendChild(buildMenuPageEl(item.page, item.menu, {
-      w: window.innerWidth,
-      fullH: window.innerHeight,
+      w: size.w,
+      fullH: size.fullH,
       pageNo: item.pageNo,
       pageCount: item.pageCount,
     }));
@@ -241,8 +322,11 @@ async function pollForUpdates() {
   // Pick up changes to the screen's own settings (operating hours, logo...).
   const freshScreen = await loadScreen();
   if (freshScreen) {
+    const layoutChanged = currentLayout(freshScreen) !== layoutNow;
     screenRow = freshScreen;
+    if (layoutChanged) { location.reload(); return; }   // re-measure everything for the new layout
     applyLogo(screenRow);
+    applyLayout(screenRow);
   }
   syncOpenState();
 
@@ -250,8 +334,11 @@ async function pollForUpdates() {
     loadPlaylist(screenRow.id),
     loadTickerText(screenRow.id),
   ]);
-  if (JSON.stringify(freshPlaylist) !== JSON.stringify(playlist)) {
-    pendingPlaylist = freshPlaylist;
+  if (JSON.stringify(freshPlaylist.main) !== JSON.stringify(playlist)) {
+    pendingPlaylist = freshPlaylist.main;
+  }
+  if (JSON.stringify(freshPlaylist.side) !== JSON.stringify(sidePlaylist)) {
+    pendingSide = freshPlaylist.side;
   }
   if (freshTicker !== lastTickerText) {
     lastTickerText = freshTicker;
@@ -271,8 +358,11 @@ async function init() {
   }
 
   applyLogo(screenRow);
+  applyLayout(screenRow);
 
-  playlist = await loadPlaylist(screenRow.id);
+  const loaded = await loadPlaylist(screenRow.id);
+  playlist = loaded.main;
+  sidePlaylist = loaded.side;
   lastTickerText = await loadTickerText(screenRow.id);
   buildTickerTrack(lastTickerText || "Welcome");
 
@@ -285,6 +375,7 @@ async function init() {
     showEmptyState();
   }
 
+  showSideItem();
   setInterval(pollForUpdates, POLL_INTERVAL_MS);
 
   // Tell the server this screen is alive, now and every minute.
