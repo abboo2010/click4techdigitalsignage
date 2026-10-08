@@ -179,6 +179,36 @@ async function loadScreen() {
   return data;
 }
 
+// ---------- Offline copy ----------
+// Registers the service worker (sw.js), which stores the player, the screen's
+// data and all of its images/videos on this device, so playback continues
+// when the internet drops.
+
+function registerOffline() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("sw.js")
+    .then(() => navigator.serviceWorker.ready)
+    .then(() => {
+      // The first requests happened before the worker took over; fetch the
+      // data once more now so a copy is stored straight away.
+      setTimeout(() => { if (screenRow) pollForUpdates(); }, 1500);
+    })
+    .catch(() => {});
+}
+
+let lastOfflineSync = "";
+function syncOfflineMedia(allMedia) {
+  if (!("serviceWorker" in navigator)) return;
+  const urls = allMedia.filter(m => m.storage_path).map(m => publicMediaUrl(m.storage_path));
+  if (screenRow && screenRow.logo_path) urls.push(publicMediaUrl(screenRow.logo_path));
+  const key = JSON.stringify(urls);
+  if (key === lastOfflineSync) return;
+  lastOfflineSync = key;
+  navigator.serviceWorker.ready
+    .then(reg => reg.active && reg.active.postMessage({ type: "sync", slug: screenSlug, urls }))
+    .catch(() => {});
+}
+
 async function loadPlaylist(screenId) {
   const [mediaRes, menuRes] = await Promise.all([
     db.from("media_items").select("*").eq("screen_id", screenId).order("sort_order", { ascending: true }),
@@ -187,6 +217,7 @@ async function loadPlaylist(screenId) {
   ]);
   if (mediaRes.error) return { main: [], side: [] };
   const allMedia = mediaRes.data || [];
+  syncOfflineMedia(allMedia);   // keep every file of this screen stored on the device
   const media = allMedia.filter(m => m.zone !== "side");
   const sideMedia = allMedia.filter(m => m.zone === "side" && m.type === "image");
   const menus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
@@ -373,6 +404,7 @@ async function pollForUpdates() {
 }
 
 async function init() {
+  registerOffline();
   if (!screenSlug) {
     showFatal("No screen specified. The player link should look like player.html?screen=your-screen-slug");
     return;
