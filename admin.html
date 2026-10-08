@@ -87,10 +87,19 @@
     })();
 
     async function loadOrgs() {
-      const { data: orgs, error } = await db
+      let { data: orgs, error } = await db
         .from("organizations")
         .select("id, name, slug, created_at, screens(id, name, slug, ticker_speed, image_duration, last_seen_at)")
         .order("created_at", { ascending: false });
+
+      // If the last_seen_at column has not been added in Supabase yet, load
+      // without it so the admin page keeps working.
+      if (error) {
+        ({ data: orgs, error } = await db
+          .from("organizations")
+          .select("id, name, slug, created_at, screens(id, name, slug, ticker_speed, image_duration)")
+          .order("created_at", { ascending: false }));
+      }
 
       const listEl = document.getElementById("orgList");
       const selectEl = document.getElementById("linkOrg");
