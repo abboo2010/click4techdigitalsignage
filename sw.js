@@ -10,7 +10,7 @@
  * Only the player is affected. The dashboard and admin pages are left alone.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = "signage-shell-" + VERSION;
 const DATA = "signage-data-" + VERSION;
 const MEDIA = "signage-media-" + VERSION;
