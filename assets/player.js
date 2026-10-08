@@ -21,6 +21,7 @@ let playlist = [];
 let pendingPlaylist = null;
 let currentIndex = 0;
 let lastTickerText = null;
+let totalItems = 0;
 
 function publicMediaUrl(storagePath) {
   const { data } = db.storage.from("media").getPublicUrl(storagePath);
@@ -56,7 +57,11 @@ async function loadPlaylist(screenId) {
     .eq("screen_id", screenId)
     .order("sort_order", { ascending: true });
   if (error) return [];
-  return data;
+  // Remember how many items exist, so the empty screen can say whether
+  // nothing was uploaded or nothing is scheduled right now.
+  totalItems = data.length;
+  // Only keep what is scheduled to play right now (Malaysia time).
+  return data.filter(item => isScheduledNow(item));
 }
 
 async function loadTickerText(screenId) {
@@ -165,7 +170,9 @@ function showEmptyState() {
   clearStage();
   const div = document.createElement("div");
   div.id = "stage-empty";
-  div.textContent = "No videos or images have been added to this screen yet.";
+  div.textContent = totalItems > 0
+    ? "Nothing is scheduled to play right now."
+    : "No videos or images have been added to this screen yet.";
   stage.appendChild(div);
 }
 

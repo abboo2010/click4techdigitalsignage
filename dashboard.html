@@ -26,12 +26,55 @@
 
   </div>
 
+  <!-- Schedule pop-up -->
+  <div class="modal-backdrop" id="scheduleModal" onclick="if(event.target===this)closeSchedule()">
+    <div class="modal">
+      <h2>Schedule</h2>
+      <div class="sub" id="schedFile"></div>
+
+      <label>Play on these days (leave all unticked = every day)</label>
+      <div class="day-row" id="schedDays"></div>
+
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <input type="checkbox" id="schedAllDay" style="width:auto; margin:0;" onchange="toggleAllDay()">
+        Play all day
+      </label>
+      <div id="schedTimes">
+        <label>From</label>
+        <div class="time-row" id="schedFrom"></div>
+        <label>Until</label>
+        <div class="time-row" id="schedUntil"></div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="schedStartDate">Start date (optional)</label>
+          <input type="date" id="schedStartDate">
+        </div>
+        <div>
+          <label for="schedEndDate">End date (optional)</label>
+          <input type="date" id="schedEndDate">
+        </div>
+      </div>
+      <p style="color:var(--muted); font-size:12px; margin-top:10px;">All times are Malaysia time.</p>
+
+      <div id="schedMsg" class="msg"></div>
+      <div class="modal-actions">
+        <button class="icon-btn" onclick="clearSchedule()">Play always (clear)</button>
+        <button class="secondary" onclick="closeSchedule()">Cancel</button>
+        <button onclick="saveSchedule()" id="schedSaveBtn">Save schedule</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/schedule.js"></script>
   <script src="assets/app.js"></script>
   <script>
     let myProfile = null;
     let myScreens = [];
     let currentScreen = null;
+    let mediaCache = [];
 
     (async () => {
       const session = await requireSession();
@@ -317,23 +360,166 @@
         .eq("screen_id", currentScreen.id)
         .order("sort_order", { ascending: true });
       if (error) { listEl.textContent = "Failed to load: " + error.message; return; }
+      mediaCache = data;
       if (!data.length) { listEl.innerHTML = '<div class="empty">No videos or images yet.</div>'; return; }
 
       listEl.innerHTML = `
         <table>
-          <thead><tr><th>File</th><th>Type</th><th></th></tr></thead>
+          <thead><tr><th>File</th><th>Type</th><th>Schedule</th><th></th></tr></thead>
           <tbody>
             ${data.map(m => `
               <tr>
                 <td>${escapeHtml(m.storage_path.split("/").pop())}</td>
                 <td>${m.type}</td>
-                <td style="text-align:right;"><button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button></td>
+                <td style="font-size:13px;">
+                  ${escapeHtml(scheduleSummary(m))}
+                  ${hasSchedule(m) ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : ''}
+                </td>
+                <td style="text-align:right; white-space:nowrap;">
+                  <button class="icon-btn" onclick="openSchedule('${m.id}')">Schedule</button>
+                  <button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button>
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       `;
     }
+
+    // ---------- Scheduling ----------
+
+    let scheduleItemId = null;
+
+    (function buildScheduleControls() {
+      document.getElementById("schedDays").innerHTML = [1,2,3,4,5,6,0].map(d =>
+        `<label><input type="checkbox" class="schedDay" value="${d}"> ${DAY_NAMES[d]}</label>`
+      ).join("");
+      ["From", "Until"].forEach(which => {
+        const hours = Array.from({length: 12}, (_, i) => i + 1)
+          .map(h => `<option value="${h}">${h}</option>`).join("");
+        const mins = Array.from({length: 12}, (_, i) => i * 5)
+          .map(m => `<option value="${m}">${String(m).padStart(2, "0")}</option>`).join("");
+        document.getElementById("sched" + which).innerHTML = `
+          <select id="sched${which}H">${hours}</select>
+          <span>:</span>
+          <select id="sched${which}M">${mins}</select>
+          <select id="sched${which}AP"><option value="AM">AM</option><option value="PM">PM</option></select>`;
+      });
+    })();
+
+    function setTimeSelects(which, t) {
+      const total = timeToMinutes(t);
+      let h = Math.floor(total / 60);
+      const m = total % 60;
+      const ap = h >= 12 ? "PM" : "AM";
+      h = h % 12; if (h === 0) h = 12;
+      document.getElementById("sched" + which + "H").value = String(h);
+      document.getElementById("sched" + which + "M").value = String(m);
+      document.getElementById("sched" + which + "AP").value = ap;
+    }
+
+    function getTimeSelects(which) {
+      let h = parseInt(document.getElementById("sched" + which + "H").value, 10);
+      const m = parseInt(document.getElementById("sched" + which + "M").value, 10);
+      const ap = document.getElementById("sched" + which + "AP").value;
+      if (ap === "AM" && h === 12) h = 0;
+      if (ap === "PM" && h !== 12) h += 12;
+      return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":00";
+    }
+
+    function toggleAllDay() {
+      document.getElementById("schedTimes").style.display =
+        document.getElementById("schedAllDay").checked ? "none" : "block";
+    }
+
+    function openSchedule(id) {
+      const item = mediaCache.find(m => m.id === id);
+      if (!item) return;
+      scheduleItemId = id;
+      document.getElementById("schedFile").textContent = item.storage_path.split("/").pop();
+
+      const days = item.schedule_days || [];
+      document.querySelectorAll(".schedDay").forEach(cb => {
+        cb.checked = days.indexOf(parseInt(cb.value, 10)) !== -1;
+      });
+
+      const hasTimes = item.schedule_start && item.schedule_end &&
+        timeToMinutes(item.schedule_start) !== timeToMinutes(item.schedule_end);
+      document.getElementById("schedAllDay").checked = !hasTimes;
+      setTimeSelects("From", hasTimes ? item.schedule_start : "09:00:00");
+      setTimeSelects("Until", hasTimes ? item.schedule_end : "17:00:00");
+      toggleAllDay();
+
+      document.getElementById("schedStartDate").value = item.schedule_start_date || "";
+      document.getElementById("schedEndDate").value = item.schedule_end_date || "";
+      showMessage(document.getElementById("schedMsg"), "", false);
+      document.getElementById("scheduleModal").classList.add("open");
+    }
+
+    function closeSchedule() {
+      document.getElementById("scheduleModal").classList.remove("open");
+      scheduleItemId = null;
+    }
+
+    async function writeSchedule(fields) {
+      const msg = document.getElementById("schedMsg");
+      const btn = document.getElementById("schedSaveBtn");
+      btn.disabled = true;
+      const { data, error } = await db.from("media_items")
+        .update(fields).eq("id", scheduleItemId).select();
+      btn.disabled = false;
+      if (error) { showMessage(msg, error.message, true); return; }
+      if (!data || !data.length) {
+        showMessage(msg, "Could not save. Ask your administrator to check the scheduling permissions.", true);
+        return;
+      }
+      closeSchedule();
+      await loadMedia();
+    }
+
+    async function saveSchedule() {
+      const msg = document.getElementById("schedMsg");
+      let days = Array.from(document.querySelectorAll(".schedDay"))
+        .filter(cb => cb.checked).map(cb => parseInt(cb.value, 10)).sort();
+      if (days.length === 0 || days.length === 7) days = null;
+
+      let start = null, end = null;
+      if (!document.getElementById("schedAllDay").checked) {
+        start = getTimeSelects("From");
+        end = getTimeSelects("Until");
+        if (start === end) {
+          showMessage(msg, "'From' and 'Until' cannot be the same time. Tick 'Play all day' instead.", true);
+          return;
+        }
+      }
+
+      const startDate = document.getElementById("schedStartDate").value || null;
+      const endDate = document.getElementById("schedEndDate").value || null;
+      if (startDate && endDate && startDate > endDate) {
+        showMessage(msg, "The end date cannot be before the start date.", true);
+        return;
+      }
+
+      await writeSchedule({
+        schedule_days: days,
+        schedule_start: start,
+        schedule_end: end,
+        schedule_start_date: startDate,
+        schedule_end_date: endDate,
+      });
+    }
+
+    async function clearSchedule() {
+      await writeSchedule({
+        schedule_days: null, schedule_start: null, schedule_end: null,
+        schedule_start_date: null, schedule_end_date: null,
+      });
+    }
+
+    // Keep the "Playing now" badges fresh.
+    setInterval(() => {
+      if (currentScreen && !document.getElementById("scheduleModal").classList.contains("open")) loadMedia();
+    }, 60000);
 
     async function uploadMedia() {
       const fileInput = document.getElementById("mediaFile");
