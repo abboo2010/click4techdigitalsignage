@@ -169,13 +169,14 @@ function mainAreaSize() {
   return { w: st.clientWidth || window.innerWidth, fullH: (st.clientHeight || window.innerHeight) + MENU_TICKER_H };
 }
 
+let lastScreenError = null;
 async function loadScreen() {
   const { data, error } = await db
     .from("screens")
     .select("*")
     .eq("slug", screenSlug)
     .single();
-  if (error || !data) return null;
+  if (error || !data) { lastScreenError = error; return null; }
   return data;
 }
 
@@ -410,9 +411,15 @@ async function init() {
     return;
   }
   screenRow = await loadScreen();
-  if (!screenRow) {
-    showFatal("Screen not found. Check the player link is correct.");
-    return;
+  // No internet at start-up (and nothing stored yet) or a wrong link: keep
+  // trying, so the screen starts by itself as soon as it can.
+  while (!screenRow) {
+    const notFound = lastScreenError && lastScreenError.code === "PGRST116";
+    showFatal(notFound
+      ? "Screen not found. Check the player link is correct."
+      : "Waiting for the internet. This screen starts automatically as soon as it is connected.");
+    await new Promise(r => setTimeout(r, 10000));
+    screenRow = await loadScreen();
   }
 
   applyLogo(screenRow);
