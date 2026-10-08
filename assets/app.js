@@ -49,7 +49,12 @@ async function requireSession() {
 
 async function getMyProfile() {
   const { data: { user } } = await db.auth.getUser();
-  if (!user) return null;
+  if (!user) {
+    // Stale or expired login: start fresh instead of showing a misleading message.
+    await db.auth.signOut();
+    window.location.href = "index.html";
+    return null;
+  }
   const { data, error } = await db
     .from("profiles")
     .select("id, org_id, role, full_name")
