@@ -276,7 +276,8 @@
           <div class="link-url">${playerUrl}</div>
           <button class="small secondary" style="margin-top:10px;" onclick="navigator.clipboard.writeText('${playerUrl}')">Copy link</button>
           <button class="small" style="margin-top:10px;" onclick="downloadWindowsLauncher()">Download Windows launcher</button>
-          <p style="color:var(--muted); font-size:12px; margin-top:8px;">For a Windows display PC: run the downloaded file once. It opens this screen full screen, starts it automatically when the PC turns on, reopens it if closed, and stops the PC from sleeping.</p>
+          <a class="small" href="downloads/click4tech-signage.apk" download style="display:inline-block; margin-top:10px; padding:6px 12px; border-radius:6px; background:var(--primary, #8b1e1e); color:#fff; text-decoration:none; font-size:13px;">Download Android app (.apk)</a>
+          <p style="color:var(--muted); font-size:12px; margin-top:8px;">For a Windows display PC: run the downloaded file once. It opens this screen full screen, starts it automatically when the PC turns on, reopens it if closed, and stops the PC from sleeping. For an Android TV or tablet, install the .apk and type the screen code (<b>${escapeHtml(currentScreen.slug)}</b>) once.</p>
           <div style="margin-top:12px; font-size:13px;">
             Screen status: <span id="screenStatus">${statusPillHtml(currentScreen.last_seen_at)}</span>
           </div>
