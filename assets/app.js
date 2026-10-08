@@ -57,6 +57,7 @@ async function getMyProfile() {
     .single();
   if (error) {
     console.error("Failed to load profile", error);
+    window.__profileError = error.message;
     return null;
   }
   return data;

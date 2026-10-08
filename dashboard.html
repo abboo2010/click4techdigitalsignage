@@ -147,8 +147,12 @@
       if (!session) return;
       myProfile = await getMyProfile();
       if (!myProfile) {
+        const { data: { user: who } } = await db.auth.getUser();
         document.getElementById("mainArea").innerHTML =
-          '<div class="card">Your login isn\'t linked to an organization yet. Contact your administrator.</div>';
+          '<div class="card">Your login isn\'t linked to an organization yet. Contact your administrator.' +
+          '<div style="margin-top:10px; font-size:13px; color:var(--muted);">Signed in as: ' + escapeHtml(who ? who.email : "unknown") +
+          (window.__profileError ? '<br>Detail: ' + escapeHtml(window.__profileError) : '<br>No profile record exists for this account.') +
+          '</div></div>';
         return;
       }
       const { data: { user } } = await db.auth.getUser();
