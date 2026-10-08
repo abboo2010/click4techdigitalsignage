@@ -77,17 +77,42 @@ async function loadScreen() {
 }
 
 async function loadPlaylist(screenId) {
-  const { data, error } = await db
-    .from("media_items")
-    .select("*")
-    .eq("screen_id", screenId)
-    .order("sort_order", { ascending: true });
-  if (error) return [];
+  const [mediaRes, menuRes] = await Promise.all([
+    db.from("media_items").select("*").eq("screen_id", screenId).order("sort_order", { ascending: true }),
+    // If menu boards have not been set up yet this simply returns nothing.
+    db.from("menu_boards").select("*").eq("screen_id", screenId),
+  ]);
+  if (mediaRes.error) return [];
+  const media = mediaRes.data || [];
+  const menus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
+
   // Remember how many items exist, so the empty screen can say whether
   // nothing was uploaded or nothing is scheduled right now.
-  totalItems = data.length;
+  totalItems = media.length + menus.length;
+
   // Only keep what is scheduled to play right now (Malaysia time).
-  return data.filter(item => isScheduledNow(item));
+  const entries = media.filter(item => isScheduledNow(item));
+
+  // A menu board becomes one or more full-screen slides.
+  menus.filter(menu => isScheduledNow(menu)).forEach(menu => {
+    const pages = paginateMenu(menu, window.innerWidth, window.innerHeight);
+    pages.forEach((page, i) => {
+      entries.push({
+        type: "menu_page",
+        id: menu.id + "#" + i,
+        sort_order: menu.sort_order,
+        pageNo: i + 1,
+        pageCount: pages.length,
+        page,
+        menu: { title: menu.title, template: menu.template, accent: menu.accent, currency: menu.currency },
+        duration_seconds: menu.duration_seconds,
+      });
+    });
+  });
+
+  // Same order the client sees on the dashboard (menus and files mixed by when they were added).
+  entries.sort((a, b) => ((a.sort_order || 0) - (b.sort_order || 0)) || ((a.pageNo || 0) - (b.pageNo || 0)));
+  return entries;
 }
 
 async function loadTickerText(screenId) {
@@ -147,8 +172,16 @@ function clearStage() {
 
 function showItem(item) {
   clearStage();
-  const url = publicMediaUrl(item.storage_path);
-  if (item.type === "image") {
+  const url = item.storage_path ? publicMediaUrl(item.storage_path) : null;
+  if (item.type === "menu_page") {
+    stage.appendChild(buildMenuPageEl(item.page, item.menu, {
+      w: window.innerWidth,
+      fullH: window.innerHeight,
+      pageNo: item.pageNo,
+      pageCount: item.pageCount,
+    }));
+    scheduleAdvance((item.duration_seconds || 12) * 1000);
+  } else if (item.type === "image") {
     const frame = document.createElement("div");
     frame.className = "media-frame";
     const bg = document.createElement("img");

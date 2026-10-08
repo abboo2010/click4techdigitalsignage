@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Digital Signage — Dashboard</title>
 <link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/menu.css">
 </head>
 <body>
   <div class="topbar">
@@ -67,14 +68,72 @@
     </div>
   </div>
 
+  <!-- Menu board editor -->
+  <div class="modal-backdrop" id="menuModal">
+    <div class="modal wide">
+      <h2 id="menuModalTitle">Menu board</h2>
+      <div class="menu-edit-grid">
+        <div>
+          <div class="row">
+            <div>
+              <label for="mTitle">Menu title</label>
+              <input type="text" id="mTitle" placeholder="e.g. Breakfast Menu"
+                     oninput="menuDraft.title=this.value; refreshMenuPreview()">
+            </div>
+            <div style="flex:0 0 100px;">
+              <label for="mCurrency">Currency</label>
+              <input type="text" id="mCurrency" maxlength="6" oninput="menuDraft.currency=this.value; refreshMenuPreview()">
+            </div>
+          </div>
+
+          <label>Look</label>
+          <div class="day-row" id="mLooks"></div>
+
+          <div class="row">
+            <div>
+              <label for="mAccent">Accent colour</label>
+              <input type="color" id="mAccent" class="color-input" oninput="menuDraft.accent=this.value; refreshMenuPreview()">
+            </div>
+            <div>
+              <label for="mDuration">Seconds per slide</label>
+              <input type="number" id="mDuration" min="4" max="120" oninput="menuDraft.duration_seconds=this.value">
+            </div>
+          </div>
+
+          <label style="margin-top:14px;">Categories and items</label>
+          <div id="mCats"></div>
+          <button class="small secondary" onclick="addCat()">+ Add category</button>
+        </div>
+
+        <div class="menu-edit-preview">
+          <label>Preview (how it looks on a TV)</label>
+          <div id="mPreview" class="mpreview"></div>
+          <div id="mPreviewNav" class="mpreview-nav"></div>
+          <p style="color:var(--muted); font-size:12px; margin-top:8px;">
+            Long menus split into several slides automatically, and the player rotates through them.
+            Prices typed as numbers show as RM 12.50; you can also type text such as "S 4 / L 6".
+          </p>
+        </div>
+      </div>
+
+      <div id="mMsg" class="msg"></div>
+      <div class="modal-actions">
+        <button class="secondary" onclick="closeMenuEditor()">Cancel</button>
+        <button onclick="saveMenu()" id="mSaveBtn">Save menu board</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/schedule.js"></script>
+  <script src="assets/menu.js"></script>
   <script src="assets/app.js"></script>
   <script>
     let myProfile = null;
     let myScreens = [];
     let currentScreen = null;
     let mediaCache = [];
+    let menuCache = [];
 
     (async () => {
       const session = await requireSession();
@@ -132,6 +191,7 @@
       renderMain();
       loadTicker();
       loadMedia();
+      loadMenus();
     }
 
     function renderMain() {
@@ -186,6 +246,18 @@
             <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia()" id="uploadBtn">Upload</button></div>
           </div>
           <div id="mediaMsg" class="msg"></div>
+        </div>
+
+        <div class="card" id="menuCard">
+          <h2>Menu boards</h2>
+          <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
+            Create a menu or price list that plays on your screen between your images and videos.
+            Use <b>Schedule</b> to show a menu only at certain days and times (for example, Breakfast 7 AM to 11 AM).
+          </p>
+          <div id="menuList" class="empty">Loading...</div>
+          <div style="margin-top:12px;">
+            <button class="secondary" onclick="openMenuEditor(null)">+ New menu board</button>
+          </div>
         </div>
 
         <div class="card">
@@ -535,9 +607,262 @@
       `;
     }
 
+    // ---------- Menu boards ----------
+
+    let menuDraft = null;
+    let menuPreviewPage = 0;
+    let menuPreviewTimer = null;
+
+    const MENU_LOOKS = [
+      { id: "dark",  name: "Dark",        chip: "#0d0d0f" },
+      { id: "light", name: "Light",       chip: "#faf6ee" },
+      { id: "bold",  name: "Bold colour", chip: null },
+    ];
+
+    function blankMenuItem() { return { name: "", price: "", desc: "", soldOut: false }; }
+
+    async function loadMenus() {
+      const listEl = document.getElementById("menuList");
+      if (!listEl || !currentScreen) return;
+      const screenId = currentScreen.id;
+      const { data, error } = await db.from("menu_boards").select("*")
+        .eq("screen_id", screenId).order("sort_order", { ascending: true });
+      if (!currentScreen || currentScreen.id !== screenId) return;
+      if (error) {
+        menuCache = [];
+        listEl.innerHTML = '<div class="empty">Menu boards are not set up yet. Please contact your administrator.</div>';
+        return;
+      }
+      menuCache = data || [];
+      if (!menuCache.length) { listEl.innerHTML = '<div class="empty">No menu boards yet.</div>'; return; }
+
+      listEl.innerHTML = `
+        <table>
+          <thead><tr><th>Menu</th><th>Items</th><th>Schedule</th><th></th></tr></thead>
+          <tbody>
+            ${menuCache.map(m => {
+              const slides = paginateMenu(m, 1920, 1080).length;
+              return `
+              <tr>
+                <td><b>${escapeHtml(m.title)}</b><br>
+                    <span style="color:var(--muted); font-size:12px;">${escapeHtml((MENU_LOOKS.find(l => l.id === m.template) || MENU_LOOKS[0]).name)} look</span></td>
+                <td style="font-size:13px;">${menuItemCount(m)} items<br>
+                    <span style="color:var(--muted); font-size:12px;">${slides} slide${slides === 1 ? "" : "s"}</span></td>
+                <td style="font-size:13px;">
+                  ${escapeHtml(scheduleSummary(m))}
+                  ${hasSchedule(m) ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : ''}
+                </td>
+                <td style="text-align:right; white-space:nowrap;">
+                  <button class="icon-btn" onclick="openMenuEditor('${m.id}')">Edit</button>
+                  <button class="icon-btn" onclick="openSchedule('${m.id}', 'menu_boards')">Schedule</button>
+                  <button class="icon-btn" onclick="deleteMenu('${m.id}')">Delete</button>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    function openMenuEditor(id) {
+      const existing = id ? menuCache.find(m => m.id === id) : null;
+      if (existing) {
+        menuDraft = {
+          id: existing.id, title: existing.title, template: existing.template || "dark",
+          accent: existing.accent || "#8b1e1e", currency: existing.currency || "",
+          duration_seconds: existing.duration_seconds || 12,
+          categories: (existing.categories || []).map(c => ({
+            name: c.name || "",
+            items: (c.items || []).map(i => ({
+              name: i.name || "", price: i.price == null ? "" : String(i.price),
+              desc: i.desc || "", soldOut: !!i.soldOut,
+            })),
+          })),
+        };
+        if (!menuDraft.categories.length) menuDraft.categories.push({ name: "", items: [blankMenuItem()] });
+      } else {
+        menuDraft = {
+          id: null, title: "", template: "dark", accent: "#8b1e1e", currency: "RM", duration_seconds: 12,
+          categories: [{ name: "", items: [blankMenuItem()] }],
+        };
+      }
+      menuPreviewPage = 0;
+      document.getElementById("menuModalTitle").textContent = existing ? "Edit menu board" : "New menu board";
+      document.getElementById("mTitle").value = menuDraft.title;
+      document.getElementById("mCurrency").value = menuDraft.currency;
+      document.getElementById("mAccent").value = menuDraft.accent;
+      document.getElementById("mDuration").value = menuDraft.duration_seconds;
+      showMessage(document.getElementById("mMsg"), "", false);
+      renderMenuLooks();
+      renderMenuCats();
+      document.getElementById("menuModal").classList.add("open");
+      renderMenuPreview();
+    }
+
+    function closeMenuEditor() {
+      document.getElementById("menuModal").classList.remove("open");
+      menuDraft = null;
+    }
+
+    function renderMenuLooks() {
+      document.getElementById("mLooks").innerHTML = MENU_LOOKS.map(l => `
+        <label>
+          <input type="radio" name="mLook" value="${l.id}" ${menuDraft.template === l.id ? "checked" : ""}
+                 onchange="menuDraft.template='${l.id}'; refreshMenuPreview()">
+          <span class="look-chip" style="background:${l.chip || "linear-gradient(135deg,#b3261e,#e8590c)"}"></span> ${l.name}
+        </label>`).join("");
+    }
+
+    function renderMenuCats() {
+      const e = escapeHtml;
+      document.getElementById("mCats").innerHTML = menuDraft.categories.map((c, ci) => `
+        <div class="mcat">
+          <div class="mcat-head">
+            <input type="text" placeholder="Category name, e.g. Coffee" value="${e(c.name)}"
+                   oninput="menuDraft.categories[${ci}].name=this.value; refreshMenuPreview()">
+            <button class="icon-btn" title="Move up" onclick="moveCat(${ci},-1)">↑</button>
+            <button class="icon-btn" title="Move down" onclick="moveCat(${ci},1)">↓</button>
+            <button class="icon-btn" onclick="delCat(${ci})">Delete</button>
+          </div>
+          ${c.items.map((it, ii) => `
+            <div class="mitem">
+              <input type="text" class="mi-name" placeholder="Item name" value="${e(it.name)}"
+                     oninput="menuDraft.categories[${ci}].items[${ii}].name=this.value; refreshMenuPreview()">
+              <input type="text" class="mi-price" placeholder="Price" value="${e(it.price)}"
+                     oninput="menuDraft.categories[${ci}].items[${ii}].price=this.value; refreshMenuPreview()">
+              <input type="text" class="mi-desc" placeholder="Short description (optional)" value="${e(it.desc)}"
+                     oninput="menuDraft.categories[${ci}].items[${ii}].desc=this.value; refreshMenuPreview()">
+              <label class="mi-sold"><input type="checkbox" ${it.soldOut ? "checked" : ""}
+                     onchange="menuDraft.categories[${ci}].items[${ii}].soldOut=this.checked; refreshMenuPreview()"> Sold out</label>
+              <span class="mi-tools">
+                <button class="icon-btn" title="Move up" onclick="moveItem(${ci},${ii},-1)">↑</button>
+                <button class="icon-btn" title="Move down" onclick="moveItem(${ci},${ii},1)">↓</button>
+                <button class="icon-btn" title="Remove" onclick="delItem(${ci},${ii})">✕</button>
+              </span>
+            </div>`).join("")}
+          <button class="small secondary" style="margin-top:8px;" onclick="addItem(${ci})">+ Add item</button>
+        </div>`).join("");
+    }
+
+    function addCat() { menuDraft.categories.push({ name: "", items: [blankMenuItem()] }); renderMenuCats(); refreshMenuPreview(); }
+    function delCat(ci) {
+      menuDraft.categories.splice(ci, 1);
+      if (!menuDraft.categories.length) menuDraft.categories.push({ name: "", items: [blankMenuItem()] });
+      renderMenuCats(); refreshMenuPreview();
+    }
+    function moveCat(ci, dir) {
+      const to = ci + dir, a = menuDraft.categories;
+      if (to < 0 || to >= a.length) return;
+      [a[ci], a[to]] = [a[to], a[ci]];
+      renderMenuCats(); refreshMenuPreview();
+    }
+    function addItem(ci) { menuDraft.categories[ci].items.push(blankMenuItem()); renderMenuCats(); refreshMenuPreview(); }
+    function delItem(ci, ii) {
+      const items = menuDraft.categories[ci].items;
+      items.splice(ii, 1);
+      if (!items.length) items.push(blankMenuItem());
+      renderMenuCats(); refreshMenuPreview();
+    }
+    function moveItem(ci, ii, dir) {
+      const a = menuDraft.categories[ci].items, to = ii + dir;
+      if (to < 0 || to >= a.length) return;
+      [a[ii], a[to]] = [a[to], a[ii]];
+      renderMenuCats(); refreshMenuPreview();
+    }
+
+    // The preview draws the slide on a virtual 1920x1080 TV and scales it down to fit.
+    function refreshMenuPreview() {
+      clearTimeout(menuPreviewTimer);
+      menuPreviewTimer = setTimeout(renderMenuPreview, 150);
+    }
+
+    function renderMenuPreview() {
+      if (!menuDraft) return;
+      const box = document.getElementById("mPreview");
+      const nav = document.getElementById("mPreviewNav");
+      const W = 1920, H = 1080;
+      const pages = paginateMenu(menuDraft, W, H);
+      const scale = box.clientWidth / W;
+      box.style.height = (H * scale) + "px";
+      box.innerHTML = "";
+
+      if (!pages.length) {
+        box.innerHTML = '<div class="mpreview-empty">Add a category with at least one item to see the preview.</div>';
+        nav.innerHTML = "";
+        return;
+      }
+      if (menuPreviewPage >= pages.length) menuPreviewPage = pages.length - 1;
+
+      const inner = document.createElement("div");
+      inner.style.cssText = `position:absolute; left:0; top:0; width:${W}px; height:${H}px; transform:scale(${scale}); transform-origin:0 0;`;
+      const stage = document.createElement("div");
+      stage.style.cssText = `position:absolute; left:0; top:0; width:${W}px; height:${H - MENU_TICKER_H}px;`;
+      stage.appendChild(buildMenuPageEl(pages[menuPreviewPage], menuDraft, {
+        w: W, fullH: H, pageNo: menuPreviewPage + 1, pageCount: pages.length,
+      }));
+      const bar = document.createElement("div");
+      bar.style.cssText = `position:absolute; left:0; bottom:0; width:${W}px; height:${MENU_TICKER_H}px; background:#0a0a0a; border-top:3px solid #8b1e1e; color:#fff; font:600 30px 'Segoe UI',Arial,sans-serif; display:flex; align-items:center; padding-left:40px; box-sizing:border-box;`;
+      bar.textContent = "Your scrolling ticker message appears here";
+      inner.appendChild(stage);
+      inner.appendChild(bar);
+      box.appendChild(inner);
+
+      nav.innerHTML = pages.length > 1 ? `
+        <button class="small secondary" onclick="menuPreviewStep(-1)">‹ Previous</button>
+        <span>Slide ${menuPreviewPage + 1} of ${pages.length}</span>
+        <button class="small secondary" onclick="menuPreviewStep(1)">Next ›</button>` : "<span>1 slide</span>";
+    }
+
+    function menuPreviewStep(dir) { menuPreviewPage += dir; if (menuPreviewPage < 0) menuPreviewPage = 0; renderMenuPreview(); }
+
+    async function saveMenu() {
+      const msg = document.getElementById("mMsg");
+      const d = menuDraft;
+      const title = d.title.trim();
+      if (!title) { showMessage(msg, "Give the menu a title.", true); return; }
+
+      const cats = [];
+      for (const c of d.categories) {
+        const name = c.name.trim();
+        const items = c.items
+          .map(i => ({ name: i.name.trim(), price: String(i.price || "").trim(), desc: (i.desc || "").trim(), soldOut: !!i.soldOut }))
+          .filter(i => i.name);
+        if (!name && !items.length) continue;                       // empty block: ignore
+        if (!name) { showMessage(msg, "Give every category a name, for example Coffee.", true); return; }
+        if (!items.length) continue;                                // category with no items: skip
+        cats.push({ name, items });
+      }
+      if (!cats.length) { showMessage(msg, "Add at least one item with a name.", true); return; }
+
+      const secs = Math.min(120, Math.max(4, parseInt(d.duration_seconds, 10) || 12));
+      const row = {
+        title, template: d.template, accent: d.accent,
+        currency: (d.currency || "").trim(), categories: cats, duration_seconds: secs,
+      };
+
+      const btn = document.getElementById("mSaveBtn");
+      btn.disabled = true;
+      const res = d.id
+        ? await db.from("menu_boards").update(row).eq("id", d.id).select()
+        : await db.from("menu_boards").insert(Object.assign({ screen_id: currentScreen.id, sort_order: Date.now() }, row)).select();
+      btn.disabled = false;
+
+      if (res.error) { showMessage(msg, res.error.message, true); return; }
+      if (!res.data || !res.data.length) { showMessage(msg, "Could not save. Please contact your administrator.", true); return; }
+      closeMenuEditor();
+      await loadMenus();
+    }
+
+    async function deleteMenu(id) {
+      if (!confirm("Delete this menu board?")) return;
+      const { error } = await db.from("menu_boards").delete().eq("id", id);
+      if (error) { alert(error.message); return; }
+      await loadMenus();
+    }
+
     // ---------- Scheduling ----------
 
     let scheduleItemId = null;
+    let scheduleTable = "media_items";
 
     (function buildScheduleControls() {
       document.getElementById("schedDays").innerHTML = [1,2,3,4,5,6,0].map(d =>
@@ -589,11 +914,14 @@
         document.getElementById("schedAllDay").checked ? "none" : "block";
     }
 
-    function openSchedule(id) {
-      const item = mediaCache.find(m => m.id === id);
+    function openSchedule(id, table) {
+      table = table || "media_items";
+      const item = (table === "menu_boards" ? menuCache : mediaCache).find(m => m.id === id);
       if (!item) return;
       scheduleItemId = id;
-      document.getElementById("schedFile").textContent = item.storage_path.split("/").pop();
+      scheduleTable = table;
+      document.getElementById("schedFile").textContent =
+        item.storage_path ? item.storage_path.split("/").pop() : "Menu board: " + item.title;
 
       const days = item.schedule_days || [];
       document.querySelectorAll(".schedDay").forEach(cb => {
@@ -622,7 +950,7 @@
       const msg = document.getElementById("schedMsg");
       const btn = document.getElementById("schedSaveBtn");
       btn.disabled = true;
-      const { data, error } = await db.from("media_items")
+      const { data, error } = await db.from(scheduleTable)
         .update(fields).eq("id", scheduleItemId).select();
       btn.disabled = false;
       if (error) { showMessage(msg, error.message, true); return; }
@@ -632,6 +960,7 @@
       }
       closeSchedule();
       await loadMedia();
+      await loadMenus();
     }
 
     async function saveSchedule() {
@@ -675,7 +1004,7 @@
 
     // Keep the "Playing now" badges fresh.
     setInterval(() => {
-      if (currentScreen && !document.getElementById("scheduleModal").classList.contains("open")) loadMedia();
+      if (currentScreen && !document.getElementById("scheduleModal").classList.contains("open")) { loadMedia(); loadMenus(); }
     }, 60000);
 
     async function uploadMedia() {
