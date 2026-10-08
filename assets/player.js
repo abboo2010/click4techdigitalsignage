@@ -91,6 +91,13 @@ function applyStyle(screen) {
   st.setProperty("--panel-font", fontCss(screen.panel_font));
   if (screen.ticker_bg) st.setProperty("--ticker-bg", validColor(screen.ticker_bg, "#0a0a0a"));
   st.setProperty("--ticker-color", validColor(screen.ticker_color, "#ffffff"));
+  // Thin line above the ticker: a colour, or "none" to hide it.
+  if (screen.ticker_line === "none") {
+    st.setProperty("--ticker-line-w", "0px");
+  } else {
+    st.setProperty("--ticker-line-w", "3px");
+    st.setProperty("--ticker-line", validColor(screen.ticker_line, "#8b1e1e"));
+  }
   st.setProperty("--ticker-font", fontCss(screen.ticker_font));
   const fontId = screen.ticker_font || "default";
   const changed = lastTickerFont !== null && lastTickerFont !== fontId;

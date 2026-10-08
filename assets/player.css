@@ -147,7 +147,7 @@ body.closed.closed-logo #signage-logo.has-logo {
   left: 0; right: 0; bottom: 0;
   height: var(--ticker-height);
   background: var(--ticker-bg, rgba(10, 10, 10, 0.72));
-  border-top: 3px solid #8b1e1e;
+  border-top: var(--ticker-line-w, 3px) solid var(--ticker-line, #8b1e1e);
   overflow: hidden;
   display: flex;
   align-items: center;

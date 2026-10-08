@@ -696,7 +696,7 @@
     // ---------- Colours & fonts ----------
 
     const STYLE_DEFAULTS = {
-      ticker_bg: "#0a0a0a", ticker_color: "#ffffff", ticker_font: "default",
+      ticker_bg: "#0a0a0a", ticker_color: "#ffffff", ticker_font: "default", ticker_line: "#8b1e1e",
       panel_color: "#8b1e1e", panel_text_color: "#ffffff", panel_font: "default",
     };
 
@@ -723,6 +723,14 @@
             <input type="color" id="stTickerColor" class="color-input" value="${styleVal("ticker_color")}" oninput="updateStylePreview()"></div>
           <div><label for="stTickerFont">Font</label>
             <select id="stTickerFont" onchange="updateStylePreview()">${fontOptions(styleVal("ticker_font"))}</select></div>
+        </div>
+        <div class="row" style="align-items:flex-end; margin-top:10px;">
+          <div style="flex:0 0 auto;"><label for="stTickerLine">Line above ticker</label>
+            <input type="color" id="stTickerLine" class="color-input" value="${styleVal("ticker_line") === "none" ? STYLE_DEFAULTS.ticker_line : styleVal("ticker_line")}" oninput="updateStylePreview()"></div>
+          <div style="flex:0 0 auto; padding-bottom:10px;">
+            <label style="display:flex; align-items:center; gap:6px; margin:0;">
+              <input type="checkbox" id="stTickerLineOn" ${styleVal("ticker_line") === "none" ? "" : "checked"} onchange="updateStylePreview()"> Show the line
+            </label></div>
         </div>
         <div id="stPrevTicker" class="st-prev-ticker">Welcome to our office &bull; Opening hours 8 AM to 6 PM</div>
 
@@ -756,6 +764,7 @@
       t.style.background = g("stTickerBg");
       t.style.color = g("stTickerColor");
       t.style.fontFamily = fontCss(g("stTickerFont"));
+      t.style.borderTop = document.getElementById("stTickerLineOn").checked ? "3px solid " + g("stTickerLine") : "0";
       const p = document.getElementById("stPrevPanel");
       if (p) {
         p.style.background = g("stPanelBg");
@@ -767,6 +776,7 @@
     function resetStyle() {
       const set = (id, v) => { document.getElementById(id).value = v; };
       set("stTickerBg", STYLE_DEFAULTS.ticker_bg); set("stTickerColor", STYLE_DEFAULTS.ticker_color); set("stTickerFont", STYLE_DEFAULTS.ticker_font);
+      set("stTickerLine", STYLE_DEFAULTS.ticker_line); document.getElementById("stTickerLineOn").checked = true;
       set("stPanelBg", STYLE_DEFAULTS.panel_color); set("stPanelText", STYLE_DEFAULTS.panel_text_color); set("stPanelFont", STYLE_DEFAULTS.panel_font);
       updateStylePreview();
       saveStyle();
@@ -777,6 +787,7 @@
       const g = id => document.getElementById(id).value;
       const fields = {
         ticker_bg: g("stTickerBg"), ticker_color: g("stTickerColor"), ticker_font: g("stTickerFont"),
+        ticker_line: document.getElementById("stTickerLineOn").checked ? g("stTickerLine") : "none",
         panel_color: g("stPanelBg"), panel_text_color: g("stPanelText"), panel_font: g("stPanelFont"),
       };
       showMessage(msg, "Saving...", false);
