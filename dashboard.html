@@ -134,6 +134,7 @@
   <script src="assets/fonts.js"></script>
   <script src="assets/menu.js"></script>
   <script src="assets/menu-starters.js"></script>
+  <script src="assets/screen-presets.js"></script>
   <script src="assets/app.js"></script>
   <script>
     let myProfile = null;
@@ -283,6 +284,8 @@
           </div>
         </div>
 
+        <div class="card" id="presetCard"></div>
+
         <div class="card" id="hoursCard"></div>
 
         <div class="card" id="layoutCard"></div>
@@ -374,6 +377,7 @@
 
       renderLogoCard();
       renderHoursCard();
+      renderPresetCard();
       renderLayoutCard();
       renderStyleCard();
     }
@@ -754,6 +758,58 @@
         </div>
         <div style="margin-top:14px;"><button onclick="saveLayout()">Save layout</button></div>
         <div id="layoutMsg" class="msg"></div>`;
+    }
+
+
+    // ---------- Quick-start looks ----------
+
+    function renderPresetCard() {
+      document.getElementById("presetCard").innerHTML = `
+        <h2>Quick start look</h2>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
+          Pick a ready-made look for this screen. It sets the layout, colours and fonts in one click. You can still change anything afterwards.
+        </p>
+        <div class="layout-grid">
+          ${SCREEN_PRESETS.map(p => `
+            <div class="layout-tile" onclick="applyPreset('${p.id}')">
+              <div style="height:54px; border-radius:6px; overflow:hidden; display:flex; flex-direction:column; border:1px solid #ccc;">
+                <div style="flex:1; display:flex;"><div style="flex:3; background:#111;"></div><div style="flex:1; background:${p.style.panel_color};"></div></div>
+                <div style="height:12px; background:${p.style.ticker_bg}; border-top:${p.style.ticker_line === "none" ? "0" : "2px solid " + p.style.ticker_line};"></div>
+              </div>
+              <b>${p.name}</b>
+              <span>${p.note}</span>
+            </div>`).join("")}
+        </div>
+        <label style="display:flex; align-items:center; gap:6px; margin-top:12px;">
+          <input type="checkbox" id="presetTicker" checked> Also add sample ticker messages (only if this screen has none)
+        </label>
+        <div id="presetMsg" class="msg"></div>`;
+    }
+
+    async function applyPreset(id) {
+      const p = SCREEN_PRESETS.find(x => x.id === id);
+      if (!p) return;
+      if (!confirm("Apply the \"" + p.name + "\" look to this screen? Your layout, colours and fonts will change. Your videos, images and menus are not touched.")) return;
+      const msg = document.getElementById("presetMsg");
+      showMessage(msg, "Applying...", false);
+      const fields = Object.assign({ layout: p.layout }, p.style);
+      const { error } = await db.from("screens").update(fields).eq("id", currentScreen.id);
+      if (error) { showMessage(msg, error.message, true); return; }
+      Object.assign(currentScreen, fields);
+      if (document.getElementById("presetTicker").checked) {
+        const { count } = await db.from("ticker_messages").select("id", { count: "exact", head: true }).eq("screen_id", currentScreen.id);
+        if (!count) {
+          const base = Date.now();
+          await db.from("ticker_messages").insert(p.ticker.map((m, i) => ({
+            screen_id: currentScreen.id, message: m, active: true, sort_order: base + i
+          })));
+        }
+      }
+      document.getElementById("sideCard").style.display = p.layout === "full" ? "none" : "block";
+      renderLayoutCard();
+      renderStyleCard();
+      loadTicker();
+      showMessage(msg, "Applied. The screen updates within about 30 seconds.", false);
     }
 
     // ---------- Colours & fonts ----------

@@ -1,0 +1,48 @@
+/* One-click looks for a screen: layout, colours, fonts and (optionally) sample ticker messages. */
+const SCREEN_PRESETS = [
+  {
+    id: "corporate", name: "Corporate office", note: "Clean navy and white. Sidebar with logo and clock.",
+    layout: "right",
+    style: { panel_color: "#0f2a4a", panel_text_color: "#ffffff", panel_font: "montserrat",
+             ticker_bg: "#0f2a4a", ticker_color: "#ffffff", ticker_font: "montserrat", ticker_line: "#d4a73a" },
+    ticker: ["Welcome to our office. Please register at the front desk.",
+             "Visitors: please wear your visitor pass at all times.",
+             "Wi-Fi is available for guests. Ask reception for the password."],
+  },
+  {
+    id: "clinic", name: "Clinic / hospital waiting room", note: "Calm teal and white. Easy to read from a distance.",
+    layout: "right",
+    style: { panel_color: "#0e6e6e", panel_text_color: "#ffffff", panel_font: "lato",
+             ticker_bg: "#0b4f4f", ticker_color: "#ffffff", ticker_font: "lato", ticker_line: "none" },
+    ticker: ["Welcome. Please take a seat and our team will attend to you shortly.",
+             "Please keep your voice low and switch your phone to silent.",
+             "Kindly inform reception if you need any assistance."],
+  },
+  {
+    id: "restaurant", name: "Cafe / restaurant", note: "Warm dark look. Pairs well with the menu starters.",
+    layout: "bottom",
+    style: { panel_color: "#3a1f12", panel_text_color: "#f6e7c8", panel_font: "playfair",
+             ticker_bg: "#1c0f08", ticker_color: "#f6e7c8", ticker_font: "playfair", ticker_line: "#c9822b" },
+    ticker: ["Today's special is on the menu board. Ask our staff for recommendations.",
+             "Free Wi-Fi for all customers.",
+             "Thank you for dining with us."],
+  },
+  {
+    id: "retail", name: "Retail shop / promotions", note: "Bold red and white. Full screen for offers.",
+    layout: "full",
+    style: { panel_color: "#c0171d", panel_text_color: "#ffffff", panel_font: "oswald",
+             ticker_bg: "#c0171d", ticker_color: "#ffffff", ticker_font: "oswald", ticker_line: "#ffd23f" },
+    ticker: ["Ask our staff about this week's offers.",
+             "Member discounts available at the counter.",
+             "Thank you for shopping with us."],
+  },
+  {
+    id: "community", name: "Temple / community hall", note: "Deep maroon and gold. Sidebar with clock and date.",
+    layout: "left",
+    style: { panel_color: "#7a1a1a", panel_text_color: "#ffe9b0", panel_font: "georgia",
+             ticker_bg: "#4d0f0f", ticker_color: "#ffe9b0", ticker_font: "georgia", ticker_line: "#e0a82e" },
+    ticker: ["Welcome. Please remove your footwear before entering.",
+             "Kindly switch off your mobile phone inside the main hall.",
+             "Thank you for your support and donations."],
+  },
+];
