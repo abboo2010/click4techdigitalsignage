@@ -189,7 +189,20 @@ function registerOffline() {
   if (!("serviceWorker" in navigator)) return;
   navigator.serviceWorker.register("sw.js")
     .then(() => navigator.serviceWorker.ready)
-    .then(() => {
+    .then(() => new Promise(resolve => {
+      // Is this page being handled by the worker? (A hard refresh, Ctrl+Shift+R,
+      // loads the page without it, and then nothing would be stored.)
+      if (navigator.serviceWorker.controller) return resolve(true);
+      const t = setTimeout(() => resolve(false), 3000);
+      navigator.serviceWorker.addEventListener("controllerchange", () => { clearTimeout(t); resolve(true); }, { once: true });
+    }))
+    .then(controlled => {
+      if (!controlled) {
+        // Reload once, normally, so the worker takes over.
+        try {
+          if (!sessionStorage.getItem("swReloaded")) { sessionStorage.setItem("swReloaded", "1"); location.reload(); return; }
+        } catch (e) { /* ignore */ }
+      }
       // The first requests happened before the worker took over; fetch the
       // data once more now so a copy is stored straight away.
       setTimeout(() => { if (screenRow) pollForUpdates(); }, 1500);
