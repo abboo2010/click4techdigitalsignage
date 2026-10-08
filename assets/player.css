@@ -82,26 +82,27 @@ body.has-side #signage-logo { display: none !important; }
 #side-head {
   flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  gap: 1.2vh;
-  padding: 3vh 1.5vw;
+  gap: 1.2vw;
+  padding: 1.6vh 1vw;
   background: var(--panel, #8b1e1e);
   color: #fff;
 }
 #side-logo {
   display: none;
-  max-width: 82%;
-  max-height: 16vh;
+  flex: none;
+  max-width: 7vw;
+  max-height: 9vh;
   object-fit: contain;
 }
 #side-logo.show { display: block; }
-#side-name { font-size: 2vw; font-weight: 700; line-height: 1.15; }
+#side-name { flex: none; max-width: 9vw; font-size: 1.3vw; font-weight: 700; line-height: 1.15; }
 #side-name:empty { display: none; }
-#side-clock { font-size: 4.2vw; font-weight: 700; line-height: 1; letter-spacing: 0.02em; }
-#side-date { font-size: 1.5vw; opacity: 0.9; }
+#side-time { min-width: 0; text-align: left; }
+#side-clock { font-size: 2.4vw; font-weight: 700; line-height: 1.05; white-space: nowrap; }
+#side-date { font-size: 0.95vw; opacity: 0.9; margin-top: 0.4vh; white-space: nowrap; }
 #side-zone { flex: 1; min-height: 0; min-width: 0; position: relative; background: #101014; }
 #side-zone .media-frame { position: absolute; inset: 0; width: 100%; height: 100%; }
 
@@ -113,11 +114,11 @@ body.layout-left #side   { top: 0; left: 0; bottom: var(--ticker-height); width:
 
 body.layout-bottom #stage { bottom: calc(var(--ticker-height) + var(--strip-h)); }
 body.layout-bottom #side  { left: 0; right: 0; bottom: var(--ticker-height); height: var(--strip-h); flex-direction: row; }
-body.layout-bottom #side-head { width: 30vw; padding: 1vh 1.5vw; gap: 0.6vh; }
-body.layout-bottom #side-logo { max-height: 9vh; }
-body.layout-bottom #side-name { font-size: 1.6vw; }
-body.layout-bottom #side-clock { font-size: 3.6vw; }
-body.layout-bottom #side-date { font-size: 1.3vw; }
+body.layout-bottom #side-head { width: 30vw; padding: 1vh 1vw; }
+body.layout-bottom #side-logo { max-height: 8vh; }
+body.layout-bottom #side-name { font-size: 1.2vw; }
+body.layout-bottom #side-clock { font-size: 2.2vw; }
+body.layout-bottom #side-date { font-size: 0.9vw; }
 
 body.closed #side { display: none !important; }
 
