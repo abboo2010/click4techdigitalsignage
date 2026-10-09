@@ -208,3 +208,7 @@ html, body { cursor: none; }
   background: rgba(0,0,0,0.7); color: #fff; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .3s; }
 #sound-hint.show { opacity: 1; }
 body { cursor: none; }
+
+/* Picture that nearly matches its space: fill it, no blurred strip. */
+.media-frame.fill .bg { display: none; }
+.media-frame.fill .fg { object-fit: cover; }

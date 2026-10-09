@@ -186,6 +186,7 @@ function showSideItem() {
   fg.className = "fg"; fg.src = url; fg.alt = "";
   frame.appendChild(bg); frame.appendChild(fg);
   zone.appendChild(frame);
+  fitFrame(frame, fg);
   const seconds = item.duration_seconds || (screenRow && screenRow.image_duration) || 8;
   sideTimer = setTimeout(showSideItem, seconds * 1000);
 }
@@ -412,6 +413,18 @@ function buildTickerTrack(baseText) {
   tickerTrack.classList.add("scrolling");
 }
 
+// A picture that almost fits its space fills it completely (no strip of blurred
+// background); anything else is shown whole, with the blurred backdrop around it.
+function fitFrame(frame, fg) {
+  const apply = () => {
+    const box = frame.parentElement;
+    if (!box || !fg.naturalWidth || !box.clientWidth || !box.clientHeight) return;
+    const ratio = (fg.naturalWidth / fg.naturalHeight) / (box.clientWidth / box.clientHeight);
+    frame.classList.toggle("fill", Math.abs(ratio - 1) <= 0.15);
+  };
+  if (fg.complete) apply(); else fg.addEventListener("load", apply, { once: true });
+}
+
 // ---------- Sound ----------
 // Browsers only allow sound after the person has clicked on the page once.
 // Screens started from the Windows launcher or the Android app are not limited.
@@ -470,6 +483,7 @@ function showItem(item) {
     fg.className = "fg"; fg.src = url; fg.alt = "";
     frame.appendChild(bg); frame.appendChild(fg);
     stage.appendChild(frame);
+    fitFrame(frame, fg);
     const seconds = item.duration_seconds || (screenRow && screenRow.image_duration) || 8;
     scheduleAdvance(seconds * 1000);
   } else if (item.type === "video") {
