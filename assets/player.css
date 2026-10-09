@@ -211,4 +211,4 @@ body { cursor: none; }
 
 /* Picture that nearly matches its space: fill it, no blurred strip. */
 .media-frame.fill .bg { display: none; }
-.media-frame.fill .fg { object-fit: cover; }
+.media-frame.fill .fg { object-fit: cover; object-position: center 20%; }

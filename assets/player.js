@@ -420,7 +420,7 @@ function fitFrame(frame, fg) {
     const box = frame.parentElement;
     if (!box || !fg.naturalWidth || !box.clientWidth || !box.clientHeight) return;
     const ratio = (fg.naturalWidth / fg.naturalHeight) / (box.clientWidth / box.clientHeight);
-    frame.classList.toggle("fill", Math.abs(ratio - 1) <= 0.15);
+    frame.classList.toggle("fill", Math.abs(ratio - 1) <= 0.35);
   };
   if (fg.complete) apply(); else fg.addEventListener("load", apply, { once: true });
 }
