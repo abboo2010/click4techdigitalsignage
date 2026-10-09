@@ -203,3 +203,8 @@ body.closed.closed-logo #signage-logo.has-logo {
 }
 
 html, body { cursor: none; }
+
+#sound-hint { position: fixed; top: 14px; right: 14px; z-index: 50; padding: 8px 14px; border-radius: 999px;
+  background: rgba(0,0,0,0.7); color: #fff; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .3s; }
+#sound-hint.show { opacity: 1; }
+body { cursor: none; }

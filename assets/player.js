@@ -412,6 +412,39 @@ function buildTickerTrack(baseText) {
   tickerTrack.classList.add("scrolling");
 }
 
+// ---------- Sound ----------
+// Browsers only allow sound after the person has clicked on the page once.
+// Screens started from the Windows launcher or the Android app are not limited.
+let currentVideo = null;
+let soundHintTimer = null;
+
+function showSoundHint() {
+  let el = document.getElementById("sound-hint");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sound-hint";
+    el.textContent = "Click anywhere for sound";
+    document.body.appendChild(el);
+  }
+  el.classList.add("show");
+  clearTimeout(soundHintTimer);
+  soundHintTimer = setTimeout(hideSoundHint, 12000);
+}
+
+function hideSoundHint() {
+  const el = document.getElementById("sound-hint");
+  if (el) el.classList.remove("show");
+}
+
+function enableSound() {
+  hideSoundHint();
+  if (currentVideo && currentVideo.isConnected && currentVideo.muted) {
+    currentVideo.muted = false;
+    currentVideo.play().catch(() => { currentVideo.muted = true; });
+  }
+}
+["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, enableSound));
+
 function clearStage() {
   stage.innerHTML = "";
 }
@@ -449,9 +482,11 @@ function showItem(item) {
     video.addEventListener("error", advance, { once: true });
     stage.appendChild(video);
     const fallback = setTimeout(advance, VIDEO_START_FALLBACK_MS);
-    video.play().then(() => clearTimeout(fallback)).catch(() => {
-      // The browser blocked sound before any click: play silently instead.
+    currentVideo = video;
+    video.play().then(() => { clearTimeout(fallback); if (!video.muted) hideSoundHint(); }).catch(() => {
+      // The browser blocked sound before any click: play silently, and turn sound on at the first click.
       video.muted = true;
+      showSoundHint();
       video.play().then(() => clearTimeout(fallback)).catch(() => {});
     });
   } else {
