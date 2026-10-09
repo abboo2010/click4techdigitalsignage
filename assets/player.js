@@ -420,7 +420,9 @@ function fitFrame(frame, fg) {
     const box = frame.parentElement;
     if (!box || !fg.naturalWidth || !box.clientWidth || !box.clientHeight) return;
     const ratio = (fg.naturalWidth / fg.naturalHeight) / (box.clientWidth / box.clientHeight);
-    frame.classList.toggle("fill", Math.abs(ratio - 1) <= 0.35);
+    // Side panel photos may be cropped a little more than the big main picture (never cut off text slides).
+    const limit = box.id === "side-zone" ? 0.35 : 0.1;
+    frame.classList.toggle("fill", Math.abs(ratio - 1) <= limit);
   };
   if (fg.complete) apply(); else fg.addEventListener("load", apply, { once: true });
 }
