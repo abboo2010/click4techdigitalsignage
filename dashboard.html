@@ -352,6 +352,8 @@
 
         <div class="card" id="hoursCard"></div>
 
+        <div class="card" id="alertCard"></div>
+
         <div id="scenesArea"></div>
 
         <div class="card" id="styleCard"></div>
@@ -406,9 +408,57 @@
 
       renderLogoCard();
       renderHoursCard();
+      renderAlertCard();
       renderPresetCard();
       renderScenes();
       renderStyleCard();
+    }
+
+    // ---------- Offline email alert ----------
+    function renderAlertCard() {
+      const s = currentScreen;
+      const mins = s.alert_after_minutes || 10;
+      const opts = [5, 10, 15, 30, 60].map(m =>
+        `<option value="${m}" ${m === mins ? "selected" : ""}>${m} minutes</option>`).join("");
+      document.getElementById("alertCard").innerHTML = `
+        <h2>Offline email alert</h2>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">Get an email when this screen stops checking in, and another when it is back. Only checked during the screen's open hours. Leave the email empty to turn it off.</p>
+        <div class="row">
+          <div>
+            <label for="alertEmail">Send alerts to (email)</label>
+            <input type="email" id="alertEmail" placeholder="you@example.com" value="${escapeHtml(s.alert_email || "")}">
+          </div>
+          <div>
+            <label for="alertMinutes">Alert me after it has been offline for</label>
+            <select id="alertMinutes">${opts}</select>
+          </div>
+          <div style="flex:0 0 auto; align-self:flex-end;">
+            <button onclick="saveAlert()" id="alertSaveBtn">Save</button>
+          </div>
+        </div>
+        <div id="alertMsg" class="msg"></div>`;
+    }
+
+    async function saveAlert() {
+      const msg = document.getElementById("alertMsg");
+      const email = document.getElementById("alertEmail").value.trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showMessage(msg, "That email address does not look right.", true);
+        return;
+      }
+      const fields = {
+        alert_email: email || null,
+        alert_after_minutes: parseInt(document.getElementById("alertMinutes").value, 10) || 10,
+        alert_active: false,
+      };
+      const btn = document.getElementById("alertSaveBtn");
+      btn.disabled = true;
+      const { data, error } = await db.from("screens").update(fields).eq("id", currentScreen.id).select();
+      btn.disabled = false;
+      if (error) { showMessage(msg, error.message, true); return; }
+      if (!data || !data.length) { showMessage(msg, "Could not save. Please contact your administrator.", true); return; }
+      Object.assign(currentScreen, fields);
+      showMessage(msg, email ? "Saved. You will be emailed at " + email + " if this screen goes offline." : "Saved. Alerts are off.", false);
     }
 
     // ---------- Screen hours ----------
