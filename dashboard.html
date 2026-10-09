@@ -143,7 +143,9 @@
     let mediaCache = [];
     let menuCache = [];
     let sceneList = [];
-    let currentSceneId = null;
+    let currentSceneId = null;      // the scene the last button press was for
+    let editingSceneId = null;      // the scene whose settings panel is open
+    let mediaLoaded = false, menusLoaded = false;
 
     (async () => {
       const session = await requireSession();
@@ -203,6 +205,8 @@
     async function selectScreen(id) {
       currentScreen = myScreens.find(s => s.id === id);
       currentSceneId = null;
+      editingSceneId = null;
+      mediaLoaded = false; menusLoaded = false;
       await loadScenes();
       if (!currentScreen || currentScreen.id !== id) return;
       renderMain();
@@ -227,27 +231,15 @@
       if (!sceneList.some(s => s.id === currentSceneId)) currentSceneId = sceneList.length ? sceneList[0].id : null;
     }
 
-    function curScene() { return sceneList.find(s => s.id === currentSceneId) || null; }
 
-    // Content with no scene belongs to the first scene.
-    function inCurrentScene(item) {
+
+    function belongsTo(item, scene) {
       if (!sceneList.length) return true;
-      return item.scene_id ? item.scene_id === currentSceneId : currentSceneId === sceneList[0].id;
+      return item.scene_id ? item.scene_id === scene.id : scene.id === sceneList[0].id;
     }
 
+    // The panel colour settings only matter when some scene has a side panel.
     function updateSceneBadges() {
-      const sc = curScene();
-      const text = sc && sceneList.length > 1 ? " — scene: " + sc.name : "";
-      document.querySelectorAll(".scene-badge").forEach(el => { el.textContent = text; });
-      const side = document.getElementById("sideCard");
-      if (side) side.style.display = sc && sc.layout !== "full" ? "block" : "none";
-      const warn = document.getElementById("sceneWarn");
-      if (warn) {
-        const here = mediaCache.filter(inCurrentScene).filter(m => m.zone !== "side").length + menuCache.filter(inCurrentScene).length;
-        warn.innerHTML = sc && sceneList.length > 1 && !here
-          ? '<div class="msg msg-error" style="display:block;">This scene has no videos, images or menus in its main area yet, so the screen skips it. Upload some in "Videos &amp; images" below while this scene is selected.</div>'
-          : "";
-      }
       const ps = document.getElementById("panelStyle");
       if (ps) ps.style.display = sceneList.some(x => x.layout !== "full") ? "block" : "none";
     }
@@ -334,7 +326,7 @@
 
         <div class="card" id="hoursCard"></div>
 
-        <div class="card" id="layoutCard"></div>
+        <div id="scenesArea"></div>
 
         <div class="card" id="styleCard"></div>
 
@@ -366,41 +358,6 @@
         </div>
 
         <div class="card">
-          <h2>Videos &amp; images<span class="scene-badge"></span></h2>
-          <div id="mediaList" class="empty">Loading...</div>
-          <div class="row" style="margin-top:12px; align-items:center;">
-            <div><input type="file" id="mediaFile" accept="image/*,video/*"></div>
-            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('main')" id="uploadBtn">Upload</button></div>
-          </div>
-          <div id="mediaMsg" class="msg"></div>
-        </div>
-
-        <div class="card" id="sideCard" style="display:${(curScene() ? curScene().layout : (currentScreen.layout || 'full')) === 'full' ? 'none' : 'block'};">
-          <h2>Side panel images<span class="scene-badge"></span></h2>
-          <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
-            These images rotate in the side panel, separately from the main area. Good for notices, promotions or staff photos.
-          </p>
-          <div id="sideList" class="empty">Loading...</div>
-          <div class="row" style="margin-top:12px; align-items:center;">
-            <div><input type="file" id="sideFile" accept="image/*"></div>
-            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('side')" id="sideUploadBtn">Upload</button></div>
-          </div>
-          <div id="sideMsg" class="msg"></div>
-        </div>
-
-        <div class="card" id="menuCard">
-          <h2>Menu boards<span class="scene-badge"></span></h2>
-          <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
-            Create a menu or price list that plays on your screen between your images and videos.
-            Use <b>Schedule</b> to show a menu only at certain days and times (for example, Breakfast 7 AM to 11 AM).
-          </p>
-          <div id="menuList" class="empty">Loading...</div>
-          <div style="margin-top:12px;">
-            <button class="secondary" onclick="openMenuEditor(null)">+ New menu board</button>
-          </div>
-        </div>
-
-        <div class="card">
           <h2>Corporate logo</h2>
           <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
             Upload your logo and choose which top corner it appears in on the screen.
@@ -424,7 +381,7 @@
       renderLogoCard();
       renderHoursCard();
       renderPresetCard();
-      renderLayoutCard();
+      renderScenes();
       renderStyleCard();
     }
 
@@ -717,68 +674,20 @@
     // ---------- Media ----------
 
     async function loadMedia() {
-      const listEl = document.getElementById("mediaList");
+      if (!currentScreen) return;
+      const screenId = currentScreen.id;
       const { data, error } = await db
         .from("media_items")
         .select("*")
-        .eq("screen_id", currentScreen.id)
+        .eq("screen_id", screenId)
         .order("sort_order", { ascending: true });
-      if (error) { listEl.textContent = "Failed to load: " + error.message; return; }
-      mediaCache = data;
-      const inScene = data.filter(inCurrentScene);
-      renderSideList(inScene.filter(m => m.zone === "side"));
-      const mainItems = inScene.filter(m => m.zone !== "side");
-      updateSceneBadges();
-      if (!mainItems.length) { listEl.innerHTML = '<div class="empty">No videos or images yet.</div>'; return; }
-
-      listEl.innerHTML = `
-        <table>
-          <thead><tr><th>File</th><th>Type</th><th>Schedule</th><th></th></tr></thead>
-          <tbody>
-            ${mainItems.map(m => `
-              <tr>
-                <td>${escapeHtml(m.storage_path.split("/").pop())}</td>
-                <td>${m.type}</td>
-                <td style="font-size:13px;">
-                  ${escapeHtml(scheduleSummary(m))}
-                  ${hasSchedule(m) ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : ''}
-                </td>
-                <td style="text-align:right; white-space:nowrap;">
-                  <button class="icon-btn" onclick="openSchedule('${m.id}')">Schedule</button>
-                  <button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button>
-                </td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      `;
+      if (!currentScreen || currentScreen.id !== screenId) return;
+      mediaCache = error ? [] : data;
+      mediaLoaded = true;
+      renderScenes();
     }
 
-    function renderSideList(items) {
-      const el = document.getElementById("sideList");
-      if (!el) return;
-      if (!items.length) { el.innerHTML = '<div class="empty">No side panel images yet.</div>'; return; }
-      el.innerHTML = `
-        <table>
-          <thead><tr><th>Image</th><th>Schedule</th><th></th></tr></thead>
-          <tbody>
-            ${items.map(m => `
-              <tr>
-                <td>${escapeHtml(m.storage_path.split("/").pop())}</td>
-                <td style="font-size:13px;">
-                  ${escapeHtml(scheduleSummary(m))}
-                  ${hasSchedule(m) ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : ''}
-                </td>
-                <td style="text-align:right; white-space:nowrap;">
-                  <button class="icon-btn" onclick="openSchedule('${m.id}')">Schedule</button>
-                  <button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button>
-                </td>
-              </tr>`).join("")}
-          </tbody>
-        </table>`;
-    }
-
-    // ---------- Scenes card ----------
+    // ---------- Scenes ----------
 
     const LAYOUTS = [
       { id: "full",      name: "Full screen",          note: "Videos and images fill the whole screen." },
@@ -792,141 +701,239 @@
     ];
     let layoutPick = "full";
 
-    function renderLayoutCard() {
-      const sc = curScene();
-      const el = document.getElementById("layoutCard");
-      if (!sc) {
-        el.innerHTML = `<h2>Scenes</h2><div class="empty">Scenes are not set up yet. Please run the Step 6 SQL, then reload.</div>`;
+    function layoutName(id) { return (LAYOUTS.find(l => l.id === id) || LAYOUTS[0]).name; }
+    function diagramHtml(id) { return `<div class="lt-diagram lt-${id}"><i class="m">Main</i><i class="h"></i><i class="z"></i><i class="t"></i></div>`; }
+    function cleanName(path) { return escapeHtml(path.split("/").pop().replace(/^\d{10,}-/, "")); }
+
+    function playingPill(m) {
+      return hasSchedule(m)
+        ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : "";
+    }
+
+    // What one scene plays: its videos, images and menu boards in play order.
+    function sceneContentHtml(sc) {
+      const media = mediaCache.filter(m => m.zone !== "side").filter(m => belongsTo(m, sc));
+      const menus = menuCache.filter(m => belongsTo(m, sc));
+      const rows = media.map(m => ({ kind: "media", m })).concat(menus.map(m => ({ kind: "menu", m })))
+        .sort((a, b) => (a.m.sort_order || 0) - (b.m.sort_order || 0));
+      if (!rows.length) return '<div class="empty">Nothing here yet.</div>';
+      return `<table>
+        <thead><tr><th>Content</th><th>Schedule</th><th></th></tr></thead>
+        <tbody>${rows.map(r => {
+          const m = r.m;
+          if (r.kind === "media") return `<tr>
+            <td>${cleanName(m.storage_path)}<br><span style="color:var(--muted); font-size:12px;">${m.type === "video" ? "Video" : "Image"}</span></td>
+            <td style="font-size:13px;">${escapeHtml(scheduleSummary(m))}${playingPill(m)}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button class="icon-btn" onclick="openSchedule('${m.id}')">Schedule</button>
+              <button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button></td></tr>`;
+          const slides = paginateMenu(m, 1920, 1080).length;
+          return `<tr>
+            <td><b>${escapeHtml(m.title)}</b><br><span style="color:var(--muted); font-size:12px;">Menu board &middot; ${menuItemCount(m)} items &middot; ${slides} slide${slides === 1 ? "" : "s"}</span></td>
+            <td style="font-size:13px;">${escapeHtml(scheduleSummary(m))}${playingPill(m)}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button class="icon-btn" onclick="currentSceneId='${sc.id}'; openMenuEditor('${m.id}')">Edit</button>
+              <button class="icon-btn" onclick="openSchedule('${m.id}', 'menu_boards')">Schedule</button>
+              <button class="icon-btn" onclick="deleteMenu('${m.id}')">Delete</button></td></tr>`;
+        }).join("")}</tbody></table>`;
+    }
+
+    function sceneSideHtml(sc) {
+      const items = mediaCache.filter(m => m.zone === "side").filter(m => belongsTo(m, sc));
+      const list = !items.length ? '<div class="empty">No side panel images yet.</div>' : `<table>
+        <thead><tr><th>Image</th><th>Schedule</th><th></th></tr></thead>
+        <tbody>${items.map(m => `<tr>
+          <td>${cleanName(m.storage_path)}</td>
+          <td style="font-size:13px;">${escapeHtml(scheduleSummary(m))}${playingPill(m)}</td>
+          <td style="text-align:right; white-space:nowrap;">
+            <button class="icon-btn" onclick="openSchedule('${m.id}')">Schedule</button>
+            <button class="icon-btn" onclick="deleteMedia('${m.id}', '${m.storage_path}')">Delete</button></td></tr>`).join("")}</tbody></table>`;
+      return `
+        <h4 class="scene-sub">Side panel images <span>rotate beside the main area, separately from it</span></h4>
+        ${list}
+        <div class="row" style="margin-top:10px; align-items:center;">
+          <div><input type="file" id="file-${sc.id}-side" accept="image/*"></div>
+          <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('side', '${sc.id}')">Upload image</button></div>
+        </div>
+        <div id="msg-${sc.id}-side" class="msg"></div>`;
+    }
+
+    function sceneSettingsHtml(sc) {
+      layoutPick = sc.layout;
+      const i = sc.id;
+      return `
+        <div class="scene-settings">
+          <div class="row" style="align-items:flex-end;">
+            <div><label for="scName-${i}">Scene name</label><input type="text" id="scName-${i}" value="${escapeHtml(sc.name)}"></div>
+            <div style="flex:0 0 auto; padding-bottom:10px;">
+              <label style="display:flex; align-items:center; gap:6px; margin:0;">
+                <input type="checkbox" id="scTicker-${i}" ${sc.show_ticker === false ? "" : "checked"}> Show the scrolling ticker
+              </label>
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <label>How long does this scene play?</label>
+            <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:14px;">
+              <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="radio" name="scDur-${i}" value="content" ${sc.duration_seconds ? "" : "checked"}> Until its content has played once</label>
+              <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="radio" name="scDur-${i}" value="fixed" ${sc.duration_seconds ? "checked" : ""}> A fixed time:
+                <input type="number" id="scSecs-${i}" min="5" max="3600" style="width:90px;" value="${sc.duration_seconds || 60}"> seconds</label>
+            </div>
+          </div>
+          <label style="margin-top:14px;">Layout</label>
+          <div class="layout-grid">
+            ${LAYOUTS.map(l => `
+              <div class="layout-tile ${layoutPick === l.id ? "selected" : ""}" data-layout="${l.id}" onclick="pickLayout('${l.id}')">
+                ${diagramHtml(l.id)}
+                <b>${l.name}</b>
+                <span>${l.note}</span>
+              </div>`).join("")}
+          </div>
+          <div style="margin-top:14px; display:flex; gap:10px;">
+            <button onclick="saveScene('${i}')">Save</button>
+            <button class="secondary" onclick="toggleSceneEdit('${i}')">Cancel</button>
+          </div>
+          <div id="layoutMsg-${i}" class="msg"></div>
+        </div>`;
+    }
+
+    function sceneCardHtml(sc, idx) {
+      const editing = editingSceneId === sc.id;
+      const many = sceneList.length > 1;
+      const hasMain = mediaCache.some(m => m.zone !== "side" && belongsTo(m, sc)) || menuCache.some(m => belongsTo(m, sc));
+      const length = sc.duration_seconds ? `plays for ${sc.duration_seconds} seconds` : "plays until its content has played once";
+      return `
+        <div class="card scene-card" id="scene-${sc.id}">
+          <div class="scene-head">
+            <h2><span class="scene-no">${idx + 1}</span> ${escapeHtml(sc.name)}</h2>
+            <div class="scene-actions">
+              <button class="icon-btn" onclick="moveScene('${sc.id}', -1)" ${idx === 0 ? "disabled" : ""}>&uarr; Earlier</button>
+              <button class="icon-btn" onclick="moveScene('${sc.id}', 1)" ${idx === sceneList.length - 1 ? "disabled" : ""}>&darr; Later</button>
+              <button class="icon-btn" onclick="toggleSceneEdit('${sc.id}')">${editing ? "Close settings" : "Layout &amp; settings"}</button>
+              <button class="icon-btn" onclick="deleteScene('${sc.id}')" ${many ? "" : "disabled"}>Delete</button>
+            </div>
+          </div>
+          <div class="scene-summary">
+            <div class="scene-thumb">${diagramHtml(sc.layout)}</div>
+            <div>
+              <b>${layoutName(sc.layout)}</b>
+              <div style="color:var(--muted); font-size:13px; margin-top:3px;">
+                Ticker ${sc.show_ticker === false ? "off" : "on"} &middot; ${length}
+              </div>
+            </div>
+          </div>
+          ${editing ? sceneSettingsHtml(sc) : ""}
+          ${many && !hasMain ? '<div class="msg msg-error" style="display:block;">This scene has no videos, images or menus yet, so the screen skips it. Add some below.</div>' : ""}
+          <h4 class="scene-sub">Videos, images &amp; menus <span>play in this order, using this scene's layout</span></h4>
+          ${sceneContentHtml(sc)}
+          <div class="row" style="margin-top:10px; align-items:center;">
+            <div><input type="file" id="file-${sc.id}-main" accept="image/*,video/*"></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('main', '${sc.id}')">Upload</button></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="currentSceneId='${sc.id}'; openMenuEditor(null)">+ New menu board</button></div>
+          </div>
+          <div id="msg-${sc.id}-main" class="msg"></div>
+          ${sc.layout !== "full" ? sceneSideHtml(sc) : ""}
+        </div>`;
+    }
+
+    function renderScenes() {
+      const el = document.getElementById("scenesArea");
+      if (!el) return;
+      if (!sceneList.length) {
+        el.innerHTML = '<div class="card"><h2>Scenes</h2><div class="empty">Scenes are not set up yet. Please run the Step 6 SQL, then reload.</div></div>';
         return;
       }
-      layoutPick = sc.layout;
-      const idx = sceneList.findIndex(s => s.id === sc.id);
+      if (!mediaLoaded || !menusLoaded) {
+        el.innerHTML = '<div class="card"><h2>Scenes</h2><div class="empty">Loading...</div></div>';
+        return;
+      }
       el.innerHTML = `
-        <h2>Scenes</h2>
-        <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
-          A scene is one screen layout with its own videos, images, menus and side images. The screen plays its scenes one after another, then starts again.
-          Pick a scene to edit it; the cards below always show the content of the scene you picked.
-        </p>
-        <div class="scene-tabs">
-          ${sceneList.map((s, i) => `<button class="scene-tab ${s.id === sc.id ? "active" : ""}" onclick="pickScene('${s.id}')">${i + 1}. ${escapeHtml(s.name)}</button>`).join("")}
-          <button class="scene-tab add" onclick="addScene()">+ Add scene</button>
+        <div class="card">
+          <h2>Scenes</h2>
+          <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
+            The screen plays its scenes one after another, then starts again. Each scene has its own layout, videos, images, menus and side images.
+            A scene with nothing in it is skipped.
+          </p>
+          <button class="secondary" onclick="addScene()">+ Add scene</button>
+          <div id="sceneAddMsg" class="msg"></div>
         </div>
-
-        <div id="sceneWarn"></div>
-
-        <div class="row" style="margin-top:14px; align-items:flex-end;">
-          <div><label for="scName">Scene name</label><input type="text" id="scName" value="${escapeHtml(sc.name)}"></div>
-          <div style="flex:0 0 auto; padding-bottom:10px;">
-            <label style="display:flex; align-items:center; gap:6px; margin:0;">
-              <input type="checkbox" id="scTicker" ${sc.show_ticker === false ? "" : "checked"}> Show the scrolling ticker
-            </label>
-          </div>
-        </div>
-
-        <div style="margin-top:12px;">
-          <label>How long does this scene play?</label>
-          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:14px;">
-            <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="radio" name="scDur" value="content" ${sc.duration_seconds ? "" : "checked"}> Until its content has played once</label>
-            <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="radio" name="scDur" value="fixed" ${sc.duration_seconds ? "checked" : ""}> A fixed time:
-              <input type="number" id="scSecs" min="5" max="3600" style="width:90px;" value="${sc.duration_seconds || 60}"> seconds</label>
-          </div>
-        </div>
-
-        <label style="margin-top:14px;">Layout</label>
-        <div class="layout-grid">
-          ${LAYOUTS.map(l => `
-            <div class="layout-tile ${layoutPick === l.id ? "selected" : ""}" data-layout="${l.id}" onclick="pickLayout('${l.id}')">
-              <div class="lt-diagram lt-${l.id}"><i class="m">Main</i><i class="h"></i><i class="z"></i><i class="t"></i></div>
-              <b>${l.name}</b>
-              <span>${l.note}</span>
-            </div>`).join("")}
-        </div>
-
-        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-          <button onclick="saveLayout()">Save scene</button>
-          <button class="secondary" onclick="moveScene(-1)" ${idx === 0 ? "disabled" : ""}>Move earlier</button>
-          <button class="secondary" onclick="moveScene(1)" ${idx === sceneList.length - 1 ? "disabled" : ""}>Move later</button>
-          <button class="secondary" onclick="deleteScene()" ${sceneList.length < 2 ? "disabled" : ""}>Delete scene</button>
-        </div>
-        <div id="layoutMsg" class="msg"></div>`;
-    }
-
-    function refreshAfterSceneChange() {
-      renderLayoutCard();
+        ${sceneList.map(sceneCardHtml).join("")}`;
       updateSceneBadges();
-      loadMedia();
-      loadMenus();
     }
 
-    function pickScene(id) {
-      currentSceneId = id;
-      refreshAfterSceneChange();
+    function sceneFileChosen() {
+      return Array.from(document.querySelectorAll('#scenesArea input[type=file]')).some(i => i.files && i.files.length);
+    }
+
+    function toggleSceneEdit(id) {
+      editingSceneId = editingSceneId === id ? null : id;
+      renderScenes();
     }
 
     function pickLayout(id) {
       layoutPick = id;
-      document.querySelectorAll("#layoutCard .layout-tile").forEach(t => t.classList.toggle("selected", t.dataset.layout === id));
+      document.querySelectorAll(".scene-settings .layout-tile").forEach(t => t.classList.toggle("selected", t.dataset.layout === id));
     }
 
     async function addScene() {
-      const msg = document.getElementById("layoutMsg");
+      const msg = document.getElementById("sceneAddMsg");
       const row = { screen_id: currentScreen.id, name: "Scene " + (sceneList.length + 1), layout: "full", sort_order: Date.now() };
       const res = await db.from("scenes").insert(row).select();
       if (res.error || !res.data || !res.data.length) { showMessage(msg, (res.error && res.error.message) || "Could not add the scene.", true); return; }
       sceneList.push(res.data[0]);
-      currentSceneId = res.data[0].id;
-      refreshAfterSceneChange();
+      editingSceneId = res.data[0].id;    // open its settings so the layout can be chosen right away
+      renderScenes();
+      const card = document.getElementById("scene-" + res.data[0].id);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    async function saveLayout() {
-      const msg = document.getElementById("layoutMsg");
-      const sc = curScene();
-      const name = document.getElementById("scName").value.trim() || sc.name;
-      const fixed = document.querySelector('input[name="scDur"]:checked').value === "fixed";
-      const secs = Math.min(3600, Math.max(5, parseInt(document.getElementById("scSecs").value, 10) || 60));
+    async function saveScene(id) {
+      const sc = sceneList.find(s => s.id === id);
+      const msg = document.getElementById("layoutMsg-" + id);
+      const name = document.getElementById("scName-" + id).value.trim() || sc.name;
+      const fixed = document.querySelector(`input[name="scDur-${id}"]:checked`).value === "fixed";
+      const secs = Math.min(3600, Math.max(5, parseInt(document.getElementById("scSecs-" + id).value, 10) || 60));
       const fields = {
         name, layout: layoutPick,
-        show_ticker: document.getElementById("scTicker").checked,
+        show_ticker: document.getElementById("scTicker-" + id).checked,
         duration_seconds: fixed ? secs : null,
       };
       showMessage(msg, "Saving...", false);
-      const { error } = await db.from("scenes").update(fields).eq("id", sc.id);
+      const { error } = await db.from("scenes").update(fields).eq("id", id);
       if (error) { showMessage(msg, error.message, true); return; }
       Object.assign(sc, fields);
       // The first scene's layout is also kept on the screen itself (used by older players).
-      if (sceneList[0].id === sc.id) {
+      if (sceneList[0].id === id) {
         await db.from("screens").update({ layout: layoutPick }).eq("id", currentScreen.id);
         currentScreen.layout = layoutPick;
       }
-      renderLayoutCard();
-      updateSceneBadges();
-      showMessage(document.getElementById("layoutMsg"), "Saved. The screen switches within about 30 seconds.", false);
+      editingSceneId = null;
+      renderScenes();
     }
 
-    async function moveScene(dir) {
-      const i = sceneList.findIndex(s => s.id === currentSceneId);
+    async function moveScene(id, dir) {
+      const i = sceneList.findIndex(s => s.id === id);
       const j = i + dir;
       if (j < 0 || j >= sceneList.length) return;
-      const a = sceneList[i], b = sceneList[j];
-      const sa = a.sort_order, sb = b.sort_order;
-      // Equal numbers cannot be swapped, so give them a clear order first.
-      const na = sa === sb ? sb + dir : sb, nb = sa === sb ? sa : sa;
-      await db.from("scenes").update({ sort_order: na }).eq("id", a.id);
-      await db.from("scenes").update({ sort_order: nb }).eq("id", b.id);
-      a.sort_order = na; b.sort_order = nb;
-      sceneList.sort((x, y) => (x.sort_order - y.sort_order));
-      refreshAfterSceneChange();
+      // Give every scene a clean position, then swap the two neighbours.
+      const order = sceneList.map(s => s.id);
+      [order[i], order[j]] = [order[j], order[i]];
+      for (let k = 0; k < order.length; k++) {
+        const sc = sceneList.find(s => s.id === order[k]);
+        if (sc.sort_order !== k) { await db.from("scenes").update({ sort_order: k }).eq("id", sc.id); sc.sort_order = k; }
+      }
+      sceneList.sort((a, b) => a.sort_order - b.sort_order);
+      renderScenes();
     }
 
-    async function deleteScene() {
-      const sc = curScene();
+    async function deleteScene(id) {
+      const sc = sceneList.find(s => s.id === id);
       if (!sc || sceneList.length < 2) return;
       if (!confirm("Delete the scene \"" + sc.name + "\"? Its videos, images and menus are not deleted; they move to the first scene.")) return;
-      const { error } = await db.from("scenes").delete().eq("id", sc.id);
-      if (error) { showMessage(document.getElementById("layoutMsg"), error.message, true); return; }
-      sceneList = sceneList.filter(s => s.id !== sc.id);
-      currentSceneId = sceneList[0].id;
-      refreshAfterSceneChange();
+      const { error } = await db.from("scenes").delete().eq("id", id);
+      if (error) { alert(error.message); return; }
+      sceneList = sceneList.filter(s => s.id !== id);
+      if (editingSceneId === id) editingSceneId = null;
+      await Promise.all([loadMedia(), loadMenus()]);
     }
 
     // ---------- Quick-start looks ----------
@@ -977,9 +984,8 @@
           })));
         }
       }
-      renderLayoutCard();
+      renderScenes();
       renderStyleCard();
-      updateSceneBadges();
       loadTicker();
       showMessage(msg, "Applied. The screen updates within about 30 seconds.", false);
     }
@@ -1103,47 +1109,14 @@
     function blankMenuItem() { return { name: "", price: "", desc: "", soldOut: false }; }
 
     async function loadMenus() {
-      const listEl = document.getElementById("menuList");
-      if (!listEl || !currentScreen) return;
+      if (!currentScreen) return;
       const screenId = currentScreen.id;
       const { data, error } = await db.from("menu_boards").select("*")
         .eq("screen_id", screenId).order("sort_order", { ascending: true });
       if (!currentScreen || currentScreen.id !== screenId) return;
-      if (error) {
-        menuCache = [];
-        listEl.innerHTML = '<div class="empty">Menu boards are not set up yet. Please contact your administrator.</div>';
-        return;
-      }
-      menuCache = data || [];
-      const menusHere = menuCache.filter(inCurrentScene);
-      updateSceneBadges();
-      if (!menusHere.length) { listEl.innerHTML = '<div class="empty">No menu boards yet.</div>'; return; }
-
-      listEl.innerHTML = `
-        <table>
-          <thead><tr><th>Menu</th><th>Items</th><th>Schedule</th><th></th></tr></thead>
-          <tbody>
-            ${menusHere.map(m => {
-              const slides = paginateMenu(m, 1920, 1080).length;
-              return `
-              <tr>
-                <td><b>${escapeHtml(m.title)}</b><br>
-                    <span style="color:var(--muted); font-size:12px;">${escapeHtml((MENU_LOOKS.find(l => l.id === m.template) || MENU_LOOKS[0]).name)} look</span></td>
-                <td style="font-size:13px;">${menuItemCount(m)} items<br>
-                    <span style="color:var(--muted); font-size:12px;">${slides} slide${slides === 1 ? "" : "s"}</span></td>
-                <td style="font-size:13px;">
-                  ${escapeHtml(scheduleSummary(m))}
-                  ${hasSchedule(m) ? `<br><span class="pill ${isScheduledNow(m) ? 'online' : 'inactive'}">${isScheduledNow(m) ? 'Playing now' : 'Not playing now'}</span>` : ''}
-                </td>
-                <td style="text-align:right; white-space:nowrap;">
-                  <button class="icon-btn" onclick="openMenuEditor('${m.id}')">Edit</button>
-                  <button class="icon-btn" onclick="openSchedule('${m.id}', 'menu_boards')">Schedule</button>
-                  <button class="icon-btn" onclick="deleteMenu('${m.id}')">Delete</button>
-                </td>
-              </tr>`;
-            }).join("")}
-          </tbody>
-        </table>`;
+      menuCache = error ? [] : (data || []);
+      menusLoaded = true;
+      renderScenes();
     }
 
     function openMenuEditor(id) {
@@ -1506,22 +1479,18 @@
 
     // Keep the "Playing now" badges fresh.
     setInterval(() => {
-      if (currentScreen && !document.getElementById("scheduleModal").classList.contains("open")) { loadMedia(); loadMenus(); }
+      if (currentScreen && !document.getElementById("scheduleModal").classList.contains("open") && !editingSceneId && !sceneFileChosen()) { loadMedia(); loadMenus(); }
     }, 60000);
 
-    async function uploadMedia(zone) {
+    async function uploadMedia(zone, sceneId) {
       zone = zone === "side" ? "side" : "main";
-      const ids = zone === "side"
-        ? { file: "sideFile", msg: "sideMsg", btn: "sideUploadBtn" }
-        : { file: "mediaFile", msg: "mediaMsg", btn: "uploadBtn" };
-      const fileInput = document.getElementById(ids.file);
-      const msg = document.getElementById(ids.msg);
+      currentSceneId = sceneId;
+      const fileInput = document.getElementById(`file-${sceneId}-${zone}`);
+      const msg = document.getElementById(`msg-${sceneId}-${zone}`);
       const file = fileInput.files[0];
       if (!file) { showMessage(msg, "Choose a file first.", true); return; }
       if (zone === "side" && !file.type.startsWith("image")) { showMessage(msg, "The side panel shows images only.", true); return; }
 
-      const btn = document.getElementById(ids.btn);
-      btn.disabled = true;
       showMessage(msg, "Uploading...", false);
 
       const type = file.type.startsWith("video") ? "video" : "image";
@@ -1529,18 +1498,14 @@
       const path = `${myProfile.org_id}/${currentScreen.id}/${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await db.storage.from("media").upload(path, file);
-      if (uploadError) { showMessage(msg, uploadError.message, true); btn.disabled = false; return; }
+      if (uploadError) { showMessage(msg, uploadError.message, true); return; }
 
-      const row = { screen_id: currentScreen.id, type, storage_path: path, sort_order: Date.now() };
-      if (currentSceneId) row.scene_id = currentSceneId;
+      const row = { screen_id: currentScreen.id, type, storage_path: path, sort_order: Date.now(), scene_id: sceneId };
       if (zone === "side") row.zone = "side";
       const { error: insertError } = await db.from("media_items").insert(row);
-      if (insertError) { showMessage(msg, insertError.message, true); btn.disabled = false; return; }
+      if (insertError) { showMessage(msg, insertError.message, true); return; }
 
-      fileInput.value = "";
-      showMessage(msg, "Uploaded.", false);
-      btn.disabled = false;
-      await loadMedia();
+      await loadMedia();   // redraws the scene with the new file
     }
 
     async function deleteMedia(id, storagePath) {
