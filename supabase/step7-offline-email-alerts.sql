@@ -122,6 +122,7 @@ as $$
 declare
   r         record;
   v_offline boolean;
+  v_open    boolean;
   v_name    text;
   v_when    text;
 begin
@@ -135,7 +136,9 @@ begin
     v_offline := r.last_seen_at is null
               or r.last_seen_at < now() - make_interval(mins => greatest(r.alert_after_minutes, 5));
 
-    if v_offline and not r.alert_active and public.screen_is_open_now(r) then
+    select public.screen_is_open_now(x) into v_open from public.screens x where x.id = r.id;
+
+    if v_offline and not r.alert_active and v_open then
       v_when := case when r.last_seen_at is null then 'It has never connected.'
                 else 'Last seen: ' || to_char(r.last_seen_at at time zone 'Asia/Kuala_Lumpur', 'DD Mon YYYY, HH12:MI AM') || ' (Malaysia time).' end;
       perform public.send_alert_email(
