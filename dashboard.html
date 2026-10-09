@@ -241,6 +241,13 @@
       document.querySelectorAll(".scene-badge").forEach(el => { el.textContent = text; });
       const side = document.getElementById("sideCard");
       if (side) side.style.display = sc && sc.layout !== "full" ? "block" : "none";
+      const warn = document.getElementById("sceneWarn");
+      if (warn) {
+        const here = mediaCache.filter(inCurrentScene).filter(m => m.zone !== "side").length + menuCache.filter(inCurrentScene).length;
+        warn.innerHTML = sc && sceneList.length > 1 && !here
+          ? '<div class="msg msg-error" style="display:block;">This scene has no videos, images or menus in its main area yet, so the screen skips it. Upload some in "Videos &amp; images" below while this scene is selected.</div>'
+          : "";
+      }
       const ps = document.getElementById("panelStyle");
       if (ps) ps.style.display = sceneList.some(x => x.layout !== "full") ? "block" : "none";
     }
@@ -805,6 +812,8 @@
           <button class="scene-tab add" onclick="addScene()">+ Add scene</button>
         </div>
 
+        <div id="sceneWarn"></div>
+
         <div class="row" style="margin-top:14px; align-items:flex-end;">
           <div><label for="scName">Scene name</label><input type="text" id="scName" value="${escapeHtml(sc.name)}"></div>
           <div style="flex:0 0 auto; padding-bottom:10px;">
@@ -1107,6 +1116,7 @@
       }
       menuCache = data || [];
       const menusHere = menuCache.filter(inCurrentScene);
+      updateSceneBadges();
       if (!menusHere.length) { listEl.innerHTML = '<div class="empty">No menu boards yet.</div>'; return; }
 
       listEl.innerHTML = `
