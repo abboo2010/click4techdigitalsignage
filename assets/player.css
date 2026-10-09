@@ -121,6 +121,23 @@ body.layout-bottom #side-name { font-size: 1.2vw; }
 body.layout-bottom #side-clock { font-size: 2.2vw; }
 body.layout-bottom #side-date { font-size: 0.9vw; }
 
+/* More layouts: top strip, split screen, wider panels, ticker off. */
+body.has-side.side-wide  { --side-w: 40vw; }
+body.has-side.side-split { --side-w: 50vw; }
+
+body.layout-top #stage { top: var(--strip-h); }
+body.layout-top #side  { left: 0; right: 0; top: 0; height: var(--strip-h); flex-direction: row; }
+
+body.layout-bottom #side-head, body.layout-top #side-head { width: 30vw; padding: 1vh 1vw; }
+body.layout-top #side-logo { max-height: 8vh; }
+body.layout-top #side-name { font-size: 1.2vw; }
+body.layout-top #side-clock { font-size: 2.2vw; }
+body.layout-top #side-date { font-size: 0.9vw; }
+
+/* Scene without the ticker: the bar is kept (so its text is still measured) but hidden. */
+body.no-ticker { --ticker-height: 0px; }
+body.no-ticker #ticker-bar { visibility: hidden; border-top-width: 0; }
+
 body.closed #side { display: none !important; }
 
 /* Outside the screen's operating hours: dark screen, optionally with the logo. */

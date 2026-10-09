@@ -30,6 +30,11 @@ let sideIndex = -1;
 let sideTimer = null;
 let clockTimer = null;
 let layoutNow = "full";
+let scenes = [];           // this screen's scenes, in play order
+let rawMedia = [];         // every media item of the screen
+let rawMenus = [];         // every menu board of the screen
+let activeScene = null;    // the scene playing now
+let sceneTimer = null;     // optional fixed time for a scene
 
 function scheduleAdvance(ms) {
   clearTimeout(advanceTimer);
@@ -45,15 +50,15 @@ function syncOpenState() {
     closedNow = true;
     clearTimeout(advanceTimer);
     clearTimeout(sideTimer);
+    clearTimeout(sceneTimer);
     clearStage();
     document.body.classList.add("closed");
     scheduleAdvance(10000);
   } else if (open && closedNow) {
     closedNow = false;
     document.body.classList.remove("closed", "closed-logo");
+    enterScene(firstPlayableScene());
     advance();
-    sideIndex = -1;
-    showSideItem();
   }
 }
 
@@ -77,10 +82,22 @@ function applyLogo(screen) {
 
 // ---------- Layout: main area + side panel ----------
 
-function currentLayout(screen) {
-  const l = screen && screen.layout;
-  return (l === "right" || l === "left" || l === "bottom") ? l : "full";
+const LAYOUTS_OK = ["full", "right", "left", "bottom", "top", "split", "wideright", "wideleft"];
+function validLayout(l) { return LAYOUTS_OK.includes(l) ? l : "full"; }
+// layout -> [side position, extra class]
+function layoutParts(l) {
+  switch (l) {
+    case "right": return ["right", ""];
+    case "left": return ["left", ""];
+    case "bottom": return ["bottom", ""];
+    case "top": return ["top", ""];
+    case "split": return ["right", "side-split"];
+    case "wideright": return ["right", "side-wide"];
+    case "wideleft": return ["left", "side-wide"];
+    default: return null;
+  }
 }
+const LAYOUT_CLASSES = ["has-side", "layout-right", "layout-left", "layout-bottom", "layout-top", "side-wide", "side-split", "no-ticker"];
 
 // Colours and fonts for the ticker and side panel. Returns true if the ticker font changed.
 let lastTickerFont = null;
@@ -108,12 +125,9 @@ function applyStyle(screen) {
   }
 }
 
+// Logo / screen name / colours (shared by every scene).
 function applyLayout(screen) {
-  layoutNow = currentLayout(screen);
-  document.body.classList.remove("layout-right", "layout-left", "layout-bottom", "has-side");
-  if (layoutNow !== "full") document.body.classList.add("has-side", "layout-" + layoutNow);
   applyStyle(screen);
-
   const logo = document.getElementById("side-logo");
   if (screen.logo_path) {
     logo.src = publicMediaUrl(screen.logo_path);
@@ -123,9 +137,22 @@ function applyLayout(screen) {
   }
   // Without a logo, show the screen's name instead.
   document.getElementById("side-name").textContent = screen.logo_path ? "" : (screen.name || "");
+}
 
+// The arrangement of one scene: main area, side panel, ticker on or off.
+function applySceneLayout(scene) {
+  layoutNow = validLayout(scene.layout);
+  const cl = document.body.classList;
+  cl.remove(...LAYOUT_CLASSES);
+  const parts = layoutParts(layoutNow);
+  if (parts) { cl.add("has-side", "layout-" + parts[0]); if (parts[1]) cl.add(parts[1]); }
+  if (scene.show_ticker === false) cl.add("no-ticker");
   clearInterval(clockTimer);
   if (layoutNow !== "full") { updateClock(); clockTimer = setInterval(updateClock, 5000); }
+}
+
+function layoutKey(scene) {
+  return [scene.id, validLayout(scene.layout), scene.show_ticker === false ? 0 : 1].join("|");
 }
 
 // Live clock in Malaysia time.
@@ -223,25 +250,50 @@ function syncOfflineMedia(allMedia) {
     .catch(() => {});
 }
 
-async function loadPlaylist(screenId) {
-  const [mediaRes, menuRes] = await Promise.all([
+// Fetches everything a screen can show. Which part plays when is decided per scene.
+async function loadContent(screenId) {
+  const [mediaRes, menuRes, sceneRes] = await Promise.all([
     db.from("media_items").select("*").eq("screen_id", screenId).order("sort_order", { ascending: true }),
-    // If menu boards have not been set up yet this simply returns nothing.
+    // If menu boards / scenes have not been set up yet these simply return nothing.
     db.from("menu_boards").select("*").eq("screen_id", screenId),
+    db.from("scenes").select("*").eq("screen_id", screenId),
   ]);
-  if (mediaRes.error) return { main: [], side: [] };
-  const allMedia = mediaRes.data || [];
-  syncOfflineMedia(allMedia);   // keep every file of this screen stored on the device
-  const media = allMedia.filter(m => m.zone !== "side");
-  const sideMedia = allMedia.filter(m => m.zone === "side" && m.type === "image");
-  const menus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
+  if (mediaRes.error) return false;
+  rawMedia = mediaRes.data || [];
+  rawMenus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
+  syncOfflineMedia(rawMedia);   // keep every file of this screen stored on the device
+
+  const rows = (sceneRes && !sceneRes.error && sceneRes.data) ? sceneRes.data.slice() : [];
+  rows.sort((a, b) => ((a.sort_order || 0) - (b.sort_order || 0)) || String(a.created_at).localeCompare(String(b.created_at)));
+  // Without scenes the screen behaves exactly as before: one scene with the screen's own layout.
+  scenes = rows.length ? rows
+    : [{ id: null, name: "Main", layout: screenRow.layout || "full", show_ticker: true, duration_seconds: null }];
+  return true;
+}
+
+function inScene(item, scene) {
+  if (scene.id === null) return true;
+  return item.scene_id ? item.scene_id === scene.id : scene.id === scenes[0].id;
+}
+
+function sceneHasContent(scene) {
+  return rawMedia.some(m => inScene(m, scene) && m.zone !== "side" && isScheduledNow(m))
+      || rawMenus.some(m => inScene(m, scene) && isScheduledNow(m));
+}
+
+// The playlists (main area and side panel) of one scene, sized for the layout applied right now.
+function buildPlaylists(scene) {
+  const media = rawMedia.filter(m => inScene(m, scene));
+  const mainMedia = media.filter(m => m.zone !== "side");
+  const sideMedia = media.filter(m => m.zone === "side" && m.type === "image");
+  const menus = rawMenus.filter(m => inScene(m, scene));
 
   // Remember how many items exist, so the empty screen can say whether
   // nothing was uploaded or nothing is scheduled right now.
-  totalItems = media.length + menus.length;
+  totalItems = mainMedia.length + menus.length;
 
   // Only keep what is scheduled to play right now (Malaysia time).
-  const entries = media.filter(item => isScheduledNow(item));
+  const entries = mainMedia.filter(item => isScheduledNow(item));
 
   // A menu board becomes one or more full-screen slides.
   menus.filter(menu => isScheduledNow(menu)).forEach(menu => {
@@ -264,6 +316,49 @@ async function loadPlaylist(screenId) {
   // Same order the client sees on the dashboard (menus and files mixed by when they were added).
   entries.sort((a, b) => ((a.sort_order || 0) - (b.sort_order || 0)) || ((a.pageNo || 0) - (b.pageNo || 0)));
   return { main: entries, side: sideMedia.filter(item => isScheduledNow(item)) };
+}
+
+function firstPlayableScene() {
+  return scenes.find(sceneHasContent) || scenes[0];
+}
+
+// The next scene that has something to play (may be the same one if it is the only one).
+function pickNextScene() {
+  const idx = activeScene ? scenes.findIndex(s => s.id === activeScene.id) : -1;
+  for (let k = 1; k <= scenes.length; k++) {
+    const cand = scenes[(idx + k + scenes.length) % scenes.length];
+    if (sceneHasContent(cand)) return cand;
+  }
+  return scenes[(idx + 1 + scenes.length) % scenes.length];
+}
+
+function enterScene(scene) {
+  activeScene = scene;
+  applySceneLayout(scene);
+  const p = buildPlaylists(scene);
+  playlist = p.main;
+  sidePlaylist = p.side;
+  pendingPlaylist = null;
+  pendingSide = null;
+  currentIndex = -1;
+  sideIndex = -1;
+  clearTimeout(sceneTimer);
+  if (scene.duration_seconds && scenes.length > 1) sceneTimer = setTimeout(sceneTimeUp, scene.duration_seconds * 1000);
+  showSideItem();
+}
+
+// A scene with a fixed time has used it up.
+function sceneTimeUp() {
+  if (closedNow) return;
+  const next = pickNextScene();
+  if (!activeScene || next.id === activeScene.id) {
+    // Nothing else to show: keep playing and look again later.
+    sceneTimer = setTimeout(sceneTimeUp, (activeScene.duration_seconds || 30) * 1000);
+    return;
+  }
+  clearTimeout(advanceTimer);
+  enterScene(next);
+  advance();
 }
 
 async function loadTickerText(screenId) {
@@ -367,6 +462,14 @@ function showItem(item) {
 function advance() {
   clearTimeout(advanceTimer);
   if (closedNow) { scheduleAdvance(10000); return; }
+
+  // Reached the end of this scene's content: on to the next scene (unless it has a fixed time).
+  const atEnd = currentIndex >= 0 && currentIndex + 1 >= playlist.length;
+  if (atEnd && scenes.length > 1 && !(activeScene && activeScene.duration_seconds)) {
+    const next = pickNextScene();
+    if (!activeScene || next.id !== activeScene.id) enterScene(next);
+  }
+
   if (pendingPlaylist) {
     playlist = pendingPlaylist;
     pendingPlaylist = null;
@@ -397,23 +500,27 @@ async function pollForUpdates() {
   // Pick up changes to the screen's own settings (operating hours, logo...).
   const freshScreen = await loadScreen();
   if (freshScreen) {
-    const layoutChanged = currentLayout(freshScreen) !== layoutNow;
     screenRow = freshScreen;
-    if (layoutChanged) { location.reload(); return; }   // re-measure everything for the new layout
     applyLogo(screenRow);
     applyLayout(screenRow);
   }
   syncOpenState();
 
-  const [freshPlaylist, freshTicker] = await Promise.all([
-    loadPlaylist(screenRow.id),
+  const [ok, freshTicker] = await Promise.all([
+    loadContent(screenRow.id),
     loadTickerText(screenRow.id),
   ]);
-  if (JSON.stringify(freshPlaylist.main) !== JSON.stringify(playlist)) {
-    pendingPlaylist = freshPlaylist.main;
-  }
-  if (JSON.stringify(freshPlaylist.side) !== JSON.stringify(sidePlaylist)) {
-    pendingSide = freshPlaylist.side;
+
+  if (ok && activeScene) {
+    const cur = scenes.find(s => s.id === activeScene.id);
+    // The layout of the scene that is playing was edited: restart so everything is re-measured.
+    if (cur && layoutKey(cur) !== layoutKey(activeScene)) { location.reload(); return; }
+    if (cur) activeScene = cur;
+    if (!closedNow) {
+      const fresh = buildPlaylists(activeScene);
+      if (JSON.stringify(fresh.main) !== JSON.stringify(playlist)) pendingPlaylist = fresh.main;
+      if (JSON.stringify(fresh.side) !== JSON.stringify(sidePlaylist)) pendingSide = fresh.side;
+    }
   }
   if (freshTicker !== lastTickerText) {
     lastTickerText = freshTicker;
@@ -442,23 +549,19 @@ async function init() {
   applyLogo(screenRow);
   applyLayout(screenRow);
 
-  const loaded = await loadPlaylist(screenRow.id);
-  playlist = loaded.main;
-  sidePlaylist = loaded.side;
+  await loadContent(screenRow.id);
   lastTickerText = await loadTickerText(screenRow.id);
   await waitForFont(screenRow.ticker_font);
   buildTickerTrack(lastTickerText || "Welcome");
 
   if (!isWithinHours(screenRow)) {
-    currentIndex = -1;   // so the first item plays when the screen opens
-    syncOpenState();
-  } else if (playlist.length) {
-    showItem(playlist[currentIndex]);
+    activeScene = scenes[0];
+    syncOpenState();   // starts the first scene when the screen opens
   } else {
-    showEmptyState();
+    enterScene(firstPlayableScene());
+    advance();
   }
 
-  showSideItem();
   setInterval(pollForUpdates, POLL_INTERVAL_MS);
 
   // Tell the server this screen is alive, now and every minute.

@@ -202,6 +202,25 @@ tr:last-child td { border-bottom: none; }
 .lt-bottom .m { left: 0; top: 0; width: 100%; height: 60%; }
 .lt-bottom .h { left: 0; top: 60%; width: 30%; height: 29%; }
 .lt-bottom .z { left: 30%; top: 60%; width: 70%; height: 29%; }
+.lt-top .m { left: 0; top: 29%; width: 100%; height: 60%; }
+.lt-top .h { left: 0; top: 0; width: 30%; height: 29%; }
+.lt-top .z { left: 30%; top: 0; width: 70%; height: 29%; }
+.lt-split .m { left: 0; top: 0; width: 50%; height: 89%; }
+.lt-split .h { right: 0; top: 0; width: 50%; height: 20%; }
+.lt-split .z { right: 0; top: 20%; width: 50%; height: 69%; }
+.lt-wideright .m { left: 0; top: 0; width: 60%; height: 89%; }
+.lt-wideright .h { right: 0; top: 0; width: 40%; height: 24%; }
+.lt-wideright .z { right: 0; top: 24%; width: 40%; height: 65%; }
+.lt-wideleft .m { right: 0; top: 0; width: 60%; height: 89%; }
+.lt-wideleft .h { left: 0; top: 0; width: 40%; height: 24%; }
+.lt-wideleft .z { left: 0; top: 24%; width: 40%; height: 65%; }
+
+/* ---------- Scenes ---------- */
+.scene-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.scene-tab { background: #fff; color: #333; border: 1px solid #c9c2b4; border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+.scene-tab.active { background: var(--accent); color: #fff; border-color: transparent; }
+.scene-tab.add { border-style: dashed; color: #666; }
+.scene-badge { font-size: 13px; font-weight: 400; color: var(--muted, #777); }
 
 
 /* ---------- Colours & fonts preview ---------- */

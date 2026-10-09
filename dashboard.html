@@ -142,6 +142,8 @@
     let currentScreen = null;
     let mediaCache = [];
     let menuCache = [];
+    let sceneList = [];
+    let currentSceneId = null;
 
     (async () => {
       const session = await requireSession();
@@ -198,12 +200,49 @@
     }
     setInterval(refreshScreenStatus, 30000);
 
-    function selectScreen(id) {
+    async function selectScreen(id) {
       currentScreen = myScreens.find(s => s.id === id);
+      currentSceneId = null;
+      await loadScenes();
+      if (!currentScreen || currentScreen.id !== id) return;
       renderMain();
       loadTicker();
       loadMedia();
       loadMenus();
+    }
+
+    // ---------- Scenes ----------
+
+    async function loadScenes() {
+      const { data, error } = await db.from("scenes").select("*")
+        .eq("screen_id", currentScreen.id).order("sort_order", { ascending: true });
+      if (error) { sceneList = []; return; }
+      sceneList = data || [];
+      if (!sceneList.length) {
+        // First time for this screen: one scene holds everything that exists today.
+        const row = { screen_id: currentScreen.id, name: "Main", layout: currentScreen.layout || "full", sort_order: 0 };
+        const res = await db.from("scenes").insert(row).select();
+        if (res.data && res.data.length) sceneList = res.data;
+      }
+      if (!sceneList.some(s => s.id === currentSceneId)) currentSceneId = sceneList.length ? sceneList[0].id : null;
+    }
+
+    function curScene() { return sceneList.find(s => s.id === currentSceneId) || null; }
+
+    // Content with no scene belongs to the first scene.
+    function inCurrentScene(item) {
+      if (!sceneList.length) return true;
+      return item.scene_id ? item.scene_id === currentSceneId : currentSceneId === sceneList[0].id;
+    }
+
+    function updateSceneBadges() {
+      const sc = curScene();
+      const text = sc && sceneList.length > 1 ? " — scene: " + sc.name : "";
+      document.querySelectorAll(".scene-badge").forEach(el => { el.textContent = text; });
+      const side = document.getElementById("sideCard");
+      if (side) side.style.display = sc && sc.layout !== "full" ? "block" : "none";
+      const ps = document.getElementById("panelStyle");
+      if (ps) ps.style.display = sceneList.some(x => x.layout !== "full") ? "block" : "none";
     }
 
 
@@ -277,7 +316,7 @@
           <div class="link-url">${playerUrl}</div>
           <button class="small secondary" style="margin-top:10px;" onclick="navigator.clipboard.writeText('${playerUrl}')">Copy link</button>
           <button class="small" style="margin-top:10px;" onclick="downloadWindowsLauncher()">Download Windows launcher</button>
-          <a class="small" href="downloads/click4tech-signage.apk" download style="display:inline-block; margin-top:10px; padding:6px 12px; border-radius:6px; background:var(--primary, #8b1e1e); color:#fff; text-decoration:none; font-size:13px;">Download Android app (.apk)</a>
+          <a class="small" href="downloads/click4tech-signage.apk" download style="display:inline-block; margin-top:10px; padding:6px 12px; border-radius:6px; background:var(--accent); color:#fff; text-decoration:none; font-size:13px;">Download Android app (.apk)</a>
           <p style="color:var(--muted); font-size:12px; margin-top:8px;">For a Windows display PC: run the downloaded file once. It opens this screen full screen, starts it automatically when the PC turns on, reopens it if closed, and stops the PC from sleeping. For an Android TV or tablet, install the .apk and type the screen code (<b>${escapeHtml(currentScreen.slug)}</b>) once.</p>
           <div style="margin-top:12px; font-size:13px;">
             Screen status: <span id="screenStatus">${statusPillHtml(currentScreen.last_seen_at)}</span>
@@ -320,7 +359,7 @@
         </div>
 
         <div class="card">
-          <h2>Videos &amp; images</h2>
+          <h2>Videos &amp; images<span class="scene-badge"></span></h2>
           <div id="mediaList" class="empty">Loading...</div>
           <div class="row" style="margin-top:12px; align-items:center;">
             <div><input type="file" id="mediaFile" accept="image/*,video/*"></div>
@@ -329,8 +368,8 @@
           <div id="mediaMsg" class="msg"></div>
         </div>
 
-        <div class="card" id="sideCard" style="display:${(currentScreen.layout || 'full') === 'full' ? 'none' : 'block'};">
-          <h2>Side panel images</h2>
+        <div class="card" id="sideCard" style="display:${(curScene() ? curScene().layout : (currentScreen.layout || 'full')) === 'full' ? 'none' : 'block'};">
+          <h2>Side panel images<span class="scene-badge"></span></h2>
           <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
             These images rotate in the side panel, separately from the main area. Good for notices, promotions or staff photos.
           </p>
@@ -343,7 +382,7 @@
         </div>
 
         <div class="card" id="menuCard">
-          <h2>Menu boards</h2>
+          <h2>Menu boards<span class="scene-badge"></span></h2>
           <p style="color:var(--muted); font-size:13px; margin-bottom:10px;">
             Create a menu or price list that plays on your screen between your images and videos.
             Use <b>Schedule</b> to show a menu only at certain days and times (for example, Breakfast 7 AM to 11 AM).
@@ -679,8 +718,10 @@
         .order("sort_order", { ascending: true });
       if (error) { listEl.textContent = "Failed to load: " + error.message; return; }
       mediaCache = data;
-      renderSideList(data.filter(m => m.zone === "side"));
-      const mainItems = data.filter(m => m.zone !== "side");
+      const inScene = data.filter(inCurrentScene);
+      renderSideList(inScene.filter(m => m.zone === "side"));
+      const mainItems = inScene.filter(m => m.zone !== "side");
+      updateSceneBadges();
       if (!mainItems.length) { listEl.innerHTML = '<div class="empty">No videos or images yet.</div>'; return; }
 
       listEl.innerHTML = `
@@ -730,24 +771,59 @@
         </table>`;
     }
 
-    // ---------- Screen layout ----------
+    // ---------- Scenes card ----------
 
     const LAYOUTS = [
-      { id: "full",   name: "Full screen",           note: "Videos and images fill the whole screen." },
-      { id: "right",  name: "Main + right panel",    note: "Logo, clock and side images on the right. Good for offices and clinics." },
-      { id: "left",   name: "Main + left panel",     note: "Same, with the panel on the left." },
-      { id: "bottom", name: "Main + bottom strip",   note: "Logo, clock and side images in a strip under the main area." },
+      { id: "full",      name: "Full screen",          note: "Videos and images fill the whole screen." },
+      { id: "right",     name: "Main + right panel",   note: "Logo, clock and side images on the right. Good for offices and clinics." },
+      { id: "left",      name: "Main + left panel",    note: "Same, with the panel on the left." },
+      { id: "bottom",    name: "Main + bottom strip",  note: "Logo, clock and side images in a strip under the main area." },
+      { id: "top",       name: "Main + top strip",     note: "The strip sits above the main area." },
+      { id: "split",     name: "Split screen 50/50",   note: "Main area and side images side by side, half each." },
+      { id: "wideright", name: "Main + wide right panel", note: "A larger right panel (40%) for more side images." },
+      { id: "wideleft",  name: "Main + wide left panel",  note: "A larger left panel (40%)." },
     ];
     let layoutPick = "full";
 
     function renderLayoutCard() {
-      layoutPick = currentScreen.layout || "full";
-      document.getElementById("layoutCard").innerHTML = `
-        <h2>Screen layout</h2>
+      const sc = curScene();
+      const el = document.getElementById("layoutCard");
+      if (!sc) {
+        el.innerHTML = `<h2>Scenes</h2><div class="empty">Scenes are not set up yet. Please run the Step 6 SQL, then reload.</div>`;
+        return;
+      }
+      layoutPick = sc.layout;
+      const idx = sceneList.findIndex(s => s.id === sc.id);
+      el.innerHTML = `
+        <h2>Scenes</h2>
         <p style="color:var(--muted); font-size:13px; margin-bottom:12px;">
-          Choose how the screen is divided. The panel shows your logo (or the screen name), the live clock and date in Malaysia time,
-          and its own rotating images. The ticker stays at the bottom.
+          A scene is one screen layout with its own videos, images, menus and side images. The screen plays its scenes one after another, then starts again.
+          Pick a scene to edit it; the cards below always show the content of the scene you picked.
         </p>
+        <div class="scene-tabs">
+          ${sceneList.map((s, i) => `<button class="scene-tab ${s.id === sc.id ? "active" : ""}" onclick="pickScene('${s.id}')">${i + 1}. ${escapeHtml(s.name)}</button>`).join("")}
+          <button class="scene-tab add" onclick="addScene()">+ Add scene</button>
+        </div>
+
+        <div class="row" style="margin-top:14px; align-items:flex-end;">
+          <div><label for="scName">Scene name</label><input type="text" id="scName" value="${escapeHtml(sc.name)}"></div>
+          <div style="flex:0 0 auto; padding-bottom:10px;">
+            <label style="display:flex; align-items:center; gap:6px; margin:0;">
+              <input type="checkbox" id="scTicker" ${sc.show_ticker === false ? "" : "checked"}> Show the scrolling ticker
+            </label>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <label>How long does this scene play?</label>
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:14px;">
+            <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="radio" name="scDur" value="content" ${sc.duration_seconds ? "" : "checked"}> Until its content has played once</label>
+            <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="radio" name="scDur" value="fixed" ${sc.duration_seconds ? "checked" : ""}> A fixed time:
+              <input type="number" id="scSecs" min="5" max="3600" style="width:90px;" value="${sc.duration_seconds || 60}"> seconds</label>
+          </div>
+        </div>
+
+        <label style="margin-top:14px;">Layout</label>
         <div class="layout-grid">
           ${LAYOUTS.map(l => `
             <div class="layout-tile ${layoutPick === l.id ? "selected" : ""}" data-layout="${l.id}" onclick="pickLayout('${l.id}')">
@@ -756,10 +832,93 @@
               <span>${l.note}</span>
             </div>`).join("")}
         </div>
-        <div style="margin-top:14px;"><button onclick="saveLayout()">Save layout</button></div>
+
+        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button onclick="saveLayout()">Save scene</button>
+          <button class="secondary" onclick="moveScene(-1)" ${idx === 0 ? "disabled" : ""}>Move earlier</button>
+          <button class="secondary" onclick="moveScene(1)" ${idx === sceneList.length - 1 ? "disabled" : ""}>Move later</button>
+          <button class="secondary" onclick="deleteScene()" ${sceneList.length < 2 ? "disabled" : ""}>Delete scene</button>
+        </div>
         <div id="layoutMsg" class="msg"></div>`;
     }
 
+    function refreshAfterSceneChange() {
+      renderLayoutCard();
+      updateSceneBadges();
+      loadMedia();
+      loadMenus();
+    }
+
+    function pickScene(id) {
+      currentSceneId = id;
+      refreshAfterSceneChange();
+    }
+
+    function pickLayout(id) {
+      layoutPick = id;
+      document.querySelectorAll("#layoutCard .layout-tile").forEach(t => t.classList.toggle("selected", t.dataset.layout === id));
+    }
+
+    async function addScene() {
+      const msg = document.getElementById("layoutMsg");
+      const row = { screen_id: currentScreen.id, name: "Scene " + (sceneList.length + 1), layout: "full", sort_order: Date.now() };
+      const res = await db.from("scenes").insert(row).select();
+      if (res.error || !res.data || !res.data.length) { showMessage(msg, (res.error && res.error.message) || "Could not add the scene.", true); return; }
+      sceneList.push(res.data[0]);
+      currentSceneId = res.data[0].id;
+      refreshAfterSceneChange();
+    }
+
+    async function saveLayout() {
+      const msg = document.getElementById("layoutMsg");
+      const sc = curScene();
+      const name = document.getElementById("scName").value.trim() || sc.name;
+      const fixed = document.querySelector('input[name="scDur"]:checked').value === "fixed";
+      const secs = Math.min(3600, Math.max(5, parseInt(document.getElementById("scSecs").value, 10) || 60));
+      const fields = {
+        name, layout: layoutPick,
+        show_ticker: document.getElementById("scTicker").checked,
+        duration_seconds: fixed ? secs : null,
+      };
+      showMessage(msg, "Saving...", false);
+      const { error } = await db.from("scenes").update(fields).eq("id", sc.id);
+      if (error) { showMessage(msg, error.message, true); return; }
+      Object.assign(sc, fields);
+      // The first scene's layout is also kept on the screen itself (used by older players).
+      if (sceneList[0].id === sc.id) {
+        await db.from("screens").update({ layout: layoutPick }).eq("id", currentScreen.id);
+        currentScreen.layout = layoutPick;
+      }
+      renderLayoutCard();
+      updateSceneBadges();
+      showMessage(document.getElementById("layoutMsg"), "Saved. The screen switches within about 30 seconds.", false);
+    }
+
+    async function moveScene(dir) {
+      const i = sceneList.findIndex(s => s.id === currentSceneId);
+      const j = i + dir;
+      if (j < 0 || j >= sceneList.length) return;
+      const a = sceneList[i], b = sceneList[j];
+      const sa = a.sort_order, sb = b.sort_order;
+      // Equal numbers cannot be swapped, so give them a clear order first.
+      const na = sa === sb ? sb + dir : sb, nb = sa === sb ? sa : sa;
+      await db.from("scenes").update({ sort_order: na }).eq("id", a.id);
+      await db.from("scenes").update({ sort_order: nb }).eq("id", b.id);
+      a.sort_order = na; b.sort_order = nb;
+      sceneList.sort((x, y) => (x.sort_order - y.sort_order));
+      refreshAfterSceneChange();
+    }
+
+    async function deleteScene() {
+      const sc = curScene();
+      if (!sc || sceneList.length < 2) return;
+      if (!confirm("Delete the scene \"" + sc.name + "\"? Its videos, images and menus are not deleted; they move to the first scene.")) return;
+      const { error } = await db.from("scenes").delete().eq("id", sc.id);
+      if (error) { showMessage(document.getElementById("layoutMsg"), error.message, true); return; }
+      sceneList = sceneList.filter(s => s.id !== sc.id);
+      currentSceneId = sceneList[0].id;
+      refreshAfterSceneChange();
+    }
 
     // ---------- Quick-start looks ----------
 
@@ -796,6 +955,10 @@
       const { error } = await db.from("screens").update(fields).eq("id", currentScreen.id);
       if (error) { showMessage(msg, error.message, true); return; }
       Object.assign(currentScreen, fields);
+      if (sceneList.length) {
+        await db.from("scenes").update({ layout: p.layout }).eq("id", sceneList[0].id);
+        sceneList[0].layout = p.layout;
+      }
       if (document.getElementById("presetTicker").checked) {
         const { count } = await db.from("ticker_messages").select("id", { count: "exact", head: true }).eq("screen_id", currentScreen.id);
         if (!count) {
@@ -805,9 +968,9 @@
           })));
         }
       }
-      document.getElementById("sideCard").style.display = p.layout === "full" ? "none" : "block";
       renderLayoutCard();
       renderStyleCard();
+      updateSceneBadges();
       loadTicker();
       showMessage(msg, "Applied. The screen updates within about 30 seconds.", false);
     }
@@ -853,7 +1016,7 @@
         </div>
         <div id="stPrevTicker" class="st-prev-ticker">Welcome to our office &bull; Opening hours 8 AM to 6 PM</div>
 
-        <div id="panelStyle" style="display:${(currentScreen.layout || "full") === "full" ? "none" : "block"}; margin-top:18px;">
+        <div id="panelStyle" style="display:${(sceneList.length ? sceneList.some(x => x.layout !== "full") : (currentScreen.layout || "full") !== "full") ? "block" : "none"}; margin-top:18px;">
           <h3 style="font-size:14px; margin-bottom:8px;">Logo, time &amp; date panel</h3>
           <div class="row" style="align-items:flex-end;">
             <div style="flex:0 0 auto;"><label for="stPanelBg">Background</label>
@@ -916,24 +1079,6 @@
       showMessage(msg, "Saved. The screen updates within about 30 seconds.", false);
     }
 
-    function pickLayout(id) {
-      layoutPick = id;
-      document.querySelectorAll(".layout-tile").forEach(t => t.classList.toggle("selected", t.dataset.layout === id));
-    }
-
-    async function saveLayout() {
-      const msg = document.getElementById("layoutMsg");
-      showMessage(msg, "Saving...", false);
-      const { error } = await db.from("screens")
-        .update({ layout: layoutPick })
-        .eq("id", currentScreen.id);
-      if (error) { showMessage(msg, error.message, true); return; }
-      currentScreen.layout = layoutPick;
-      document.getElementById("sideCard").style.display = layoutPick === "full" ? "none" : "block";
-      document.getElementById("panelStyle").style.display = layoutPick === "full" ? "none" : "block";
-      showMessage(msg, "Saved. The screen switches within about 30 seconds.", false);
-    }
-
     // ---------- Menu boards ----------
 
     let menuDraft = null;
@@ -961,13 +1106,14 @@
         return;
       }
       menuCache = data || [];
-      if (!menuCache.length) { listEl.innerHTML = '<div class="empty">No menu boards yet.</div>'; return; }
+      const menusHere = menuCache.filter(inCurrentScene);
+      if (!menusHere.length) { listEl.innerHTML = '<div class="empty">No menu boards yet.</div>'; return; }
 
       listEl.innerHTML = `
         <table>
           <thead><tr><th>Menu</th><th>Items</th><th>Schedule</th><th></th></tr></thead>
           <tbody>
-            ${menuCache.map(m => {
+            ${menusHere.map(m => {
               const slides = paginateMenu(m, 1920, 1080).length;
               return `
               <tr>
@@ -1189,7 +1335,7 @@
       btn.disabled = true;
       const res = d.id
         ? await db.from("menu_boards").update(row).eq("id", d.id).select()
-        : await db.from("menu_boards").insert(Object.assign({ screen_id: currentScreen.id, sort_order: Date.now() }, row)).select();
+        : await db.from("menu_boards").insert(Object.assign({ screen_id: currentScreen.id, sort_order: Date.now(), scene_id: currentSceneId }, row)).select();
       btn.disabled = false;
 
       if (res.error) { showMessage(msg, res.error.message, true); return; }
@@ -1376,6 +1522,7 @@
       if (uploadError) { showMessage(msg, uploadError.message, true); btn.disabled = false; return; }
 
       const row = { screen_id: currentScreen.id, type, storage_path: path, sort_order: Date.now() };
+      if (currentSceneId) row.scene_id = currentSceneId;
       if (zone === "side") row.zone = "side";
       const { error: insertError } = await db.from("media_items").insert(row);
       if (insertError) { showMessage(msg, insertError.message, true); btn.disabled = false; return; }
