@@ -212,3 +212,5 @@ body { cursor: none; }
 /* Picture that nearly matches its space: fill it, no blurred strip. */
 .media-frame.fill .bg { display: none; }
 .media-frame.fill .fg { object-fit: cover; object-position: center 20%; }
+/* In the side panel a photo sits right on top of the ticker line; any spare space is above it. */
+#side-zone .media-frame:not(.fill) .fg { object-position: center bottom; }
