@@ -126,6 +126,7 @@
             <td><span class="screen-status" data-screen-id="${s.id}">${statusPillHtml(s.last_seen_at)}</span></td>
             <td><span class="link-url">${playerBase}?screen=${s.slug}</span></td>
             <td style="text-align:right; white-space:nowrap;">
+              <a class="small" href="dashboard.html?org=${org.id}&screen=${s.id}" style="display:inline-block; padding:6px 12px; border-radius:6px; background:var(--accent); color:#fff; text-decoration:none; font-size:13px;">Open dashboard</a>
               <button class="small secondary" onclick="copyToClipboard('${playerBase}?screen=${s.slug}')">Copy link</button>
               <button class="icon-btn" onclick="deleteScreen('${s.id}', '${org.id}')">Delete</button>
             </td>
@@ -136,7 +137,8 @@
           <div style="margin-bottom:22px;">
             <div style="display:flex; align-items:center; justify-content:space-between;">
               <h3 style="margin:14px 0 8px;">${escapeHtml(org.name)}</h3>
-              <button class="icon-btn" onclick="deleteOrg('${org.id}', '${escapeHtml(org.name).replace(/'/g, "\\'")}')">Delete organization</button>
+              <span><a class="small" href="dashboard.html?org=${org.id}" style="font-size:13px; margin-right:10px;">Manage as this client</a>
+              <button class="icon-btn" onclick="deleteOrg('${org.id}', '${escapeHtml(org.name).replace(/'/g, "\\'")}')">Delete organization</button></span>
             </div>
             <table>
               <thead><tr><th>Screen</th><th>Status</th><th>Player link (open this on the TV)</th><th></th></tr></thead>

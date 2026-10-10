@@ -19,6 +19,8 @@
 
   <div class="wrap">
 
+    <div class="card" id="adminBanner" style="display:none; background:#fff4d6; border-color:#e0b84a; font-size:14px;"></div>
+
     <div class="card" id="screenPicker" style="display:none;">
       <label for="screenSelect">Screen</label>
       <select id="screenSelect" onchange="selectScreen(this.value)"></select>
@@ -138,6 +140,8 @@
   <script src="assets/app.js"></script>
   <script>
     let myProfile = null;
+    let viewOrgId = null;           // the organization being shown (an admin can view any client)
+    let adminView = false;
     let myScreens = [];
     let currentScreen = null;
     let mediaCache = [];
@@ -163,10 +167,25 @@
       const { data: { user } } = await db.auth.getUser();
       document.getElementById("whoami").textContent = user.email;
 
+      // An admin can open any client's dashboard with ?org=<id> and work as that client.
+      viewOrgId = myProfile.org_id;
+      const qs = new URLSearchParams(window.location.search);
+      if (myProfile.role === "admin" && qs.get("org")) {
+        adminView = true;
+        viewOrgId = qs.get("org");
+        const { data: orgRow } = await db.from("organizations").select("name").eq("id", viewOrgId).single();
+        document.getElementById("adminBanner").innerHTML =
+          '<b>Admin view</b> &mdash; you are managing <b>' + escapeHtml(orgRow ? orgRow.name : "this client") +
+          '</b>. Everything you change here is saved to their account. ' +
+          '<a href="admin.html" style="margin-left:10px; font-weight:600;">&larr; Back to Admin</a>';
+        document.getElementById("adminBanner").style.display = "block";
+        document.getElementById("whoami").textContent = user.email + " (admin)";
+      }
+
       const { data: screens, error } = await db
         .from("screens")
         .select("*")
-        .eq("org_id", myProfile.org_id)
+        .eq("org_id", viewOrgId)
         .order("created_at", { ascending: true });
 
       if (error) {
@@ -188,7 +207,10 @@
           myScreens.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
       }
 
-      selectScreen(myScreens[0].id);
+      const wanted = new URLSearchParams(window.location.search).get("screen");
+      const first = myScreens.find(x => x.id === wanted) || myScreens[0];
+      document.getElementById("screenSelect").value = first.id;
+      selectScreen(first.id);
     })();
 
     // Refresh the online/offline badge every 30 seconds.
@@ -650,7 +672,7 @@
 
       const oldPath = currentScreen.logo_path;
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${myProfile.org_id}/${currentScreen.id}/logo-${Date.now()}-${safeName}`;
+      const path = `${viewOrgId}/${currentScreen.id}/logo-${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await db.storage.from("media").upload(path, file);
       if (uploadError) { showMessage(msg, uploadError.message, true); btn.disabled = false; return; }
@@ -1571,7 +1593,7 @@
 
       const type = file.type.startsWith("video") ? "video" : "image";
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${myProfile.org_id}/${currentScreen.id}/${Date.now()}-${safeName}`;
+      const path = `${viewOrgId}/${currentScreen.id}/${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await db.storage.from("media").upload(path, file);
       if (uploadError) { showMessage(msg, uploadError.message, true); return; }
