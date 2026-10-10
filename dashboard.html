@@ -362,9 +362,11 @@
           <p style="color:var(--muted); font-size:13px; margin-bottom:8px;">Open this address in the browser on the TV / display PC. It always shows your latest content.</p>
           <div class="link-url">${playerUrl}</div>
           <button class="small secondary" style="margin-top:10px;" onclick="navigator.clipboard.writeText('${playerUrl}')">Copy link</button>
+          <button class="small secondary" style="margin-top:10px;" onclick="restartScreen()" id="restartBtn">Restart screen</button>
           <button class="small" style="margin-top:10px;" onclick="downloadWindowsLauncher()">Download Windows launcher</button>
           <a class="small" href="downloads/click4tech-signage.apk" download style="display:inline-block; margin-top:10px; padding:6px 12px; border-radius:6px; background:var(--accent); color:#fff; text-decoration:none; font-size:13px;">Download Android app (.apk)</a>
           <p style="color:var(--muted); font-size:12px; margin-top:8px;">For a Windows display PC: run the downloaded file once. It opens this screen full screen, starts it automatically when the PC turns on, reopens it if closed, and stops the PC from sleeping. For an Android TV or tablet, install the .apk and type the screen code (<b>${escapeHtml(currentScreen.slug)}</b>) once.</p>
+          <div id="restartMsg" class="msg"></div>
           <div style="margin-top:12px; font-size:13px;">
             Screen status: <span id="screenStatus">${statusPillHtml(currentScreen.last_seen_at)}</span>
           </div>
@@ -434,6 +436,21 @@
       renderPresetCard();
       renderScenes();
       renderStyleCard();
+    }
+
+    // ---------- Restart screen ----------
+    async function restartScreen() {
+      const msg = document.getElementById("restartMsg");
+      if (!confirm("Restart this screen? It reloads itself within about a minute.")) return;
+      const stamp = new Date().toISOString();
+      const btn = document.getElementById("restartBtn");
+      btn.disabled = true;
+      const { data, error } = await db.from("screens").update({ restart_requested_at: stamp }).eq("id", currentScreen.id).select();
+      btn.disabled = false;
+      if (error) { showMessage(msg, error.message, true); return; }
+      if (!data || !data.length) { showMessage(msg, "Could not send the restart. Please contact your administrator.", true); return; }
+      currentScreen.restart_requested_at = stamp;
+      showMessage(msg, "Restart sent. If the screen is on and online, it reloads within about a minute.", false);
     }
 
     // ---------- Offline email alert ----------

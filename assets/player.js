@@ -17,6 +17,7 @@ const params = new URLSearchParams(window.location.search);
 const screenSlug = params.get("screen");
 
 let screenRow = null;
+let restartStamp = null;  // value of restart_requested_at when this page started
 let playlist = [];
 let pendingPlaylist = null;
 let currentIndex = 0;
@@ -551,6 +552,11 @@ async function pollForUpdates() {
   // Pick up changes to the screen's own settings (operating hours, logo...).
   const freshScreen = await loadScreen();
   if (freshScreen) {
+    // The owner pressed "Restart screen" in the dashboard: start over.
+    if (freshScreen.restart_requested_at && freshScreen.restart_requested_at !== restartStamp) {
+      location.reload();
+      return;
+    }
     screenRow = freshScreen;
     applyLogo(screenRow);
     applyLayout(screenRow);
@@ -597,6 +603,7 @@ async function init() {
     screenRow = await loadScreen();
   }
 
+  restartStamp = screenRow.restart_requested_at || null;
   applyLogo(screenRow);
   applyLayout(screenRow);
 
