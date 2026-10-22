@@ -68,6 +68,11 @@ function publicMediaUrl(storagePath) {
   return data.publicUrl;
 }
 
+function setStep(text) {
+  const el = document.getElementById("stage-empty");
+  if (el) el.textContent = "Loading... " + text;
+}
+
 function showFatal(text) {
   stage.innerHTML = `<div id="stage-error">${text}</div>`;
 }
@@ -591,6 +596,7 @@ async function init() {
     showFatal("No screen specified. The player link should look like player.html?screen=your-screen-slug");
     return;
   }
+  setStep('(1/4 connecting)');
   screenRow = await loadScreen();
   // No internet at start-up (and nothing stored yet) or a wrong link: keep
   // trying, so the screen starts by itself as soon as it can.
@@ -607,8 +613,11 @@ async function init() {
   applyLogo(screenRow);
   applyLayout(screenRow);
 
+  setStep('(2/4 getting playlist)');
   await loadContent(screenRow.id);
+  setStep('(3/4 getting ticker)');
   lastTickerText = await loadTickerText(screenRow.id);
+  setStep('(4/4 starting)');
   await waitForFont(screenRow.ticker_font);
   buildTickerTrack(lastTickerText || "Welcome");
 
