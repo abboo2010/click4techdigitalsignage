@@ -26,6 +26,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -77,8 +78,15 @@ public class MainActivity extends Activity {
         box.setGravity(Gravity.CENTER);
         box.setPadding(60, 40, 60, 40);
 
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.logo_white);
+        logo.setAdjustViewBounds(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(520, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = 30;
+        box.addView(logo, lp);
+
         TextView title = new TextView(this);
-        title.setText("Click4Tech Digital Signage");
+        title.setText("Digital Signage");
         title.setTextColor(Color.WHITE);
         title.setTextSize(28);
         title.setGravity(Gravity.CENTER);
@@ -112,6 +120,8 @@ public class MainActivity extends Activity {
 
         Button start = new Button(this);
         start.setText("Start screen");
+        start.setBackgroundColor(Color.parseColor("#F68B1F"));
+        start.setTextColor(Color.BLACK);
         start.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 String url = normalise(input.getText().toString());

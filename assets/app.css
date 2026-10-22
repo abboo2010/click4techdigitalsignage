@@ -1,13 +1,15 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --accent: #8b1e1e;
-  --accent-dark: #6e1717;
-  --bg: #f4f0ea;
+  --accent: #1f2533;
+  --accent-dark: #10141d;
+  --brand-orange: #f68b1f;
+  --brand-orange-dark: #d9740e;
+  --bg: #f5f6f8;
   --panel: #ffffff;
-  --border: #e2ddd3;
+  --border: #e1e4ea;
   --text: #2a2a2a;
-  --muted: #767066;
+  --muted: #6b7280;
 }
 
 html, body {
@@ -29,7 +31,7 @@ html, body {
   justify-content: space-between;
   padding: 16px 24px;
   background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 3px solid var(--brand-orange);
 }
 
 .topbar h1 {
@@ -54,7 +56,7 @@ button, .btn {
 }
 button:hover, .btn:hover { background: var(--accent-dark); }
 button.secondary { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
-button.secondary:hover { background: #fbeeee; }
+button.secondary:hover { background: #fff3e6; }
 button.small { padding: 5px 10px; font-size: 12px; }
 button.danger { background: #a33; }
 button.danger:hover { background: #822; }
@@ -113,7 +115,7 @@ tr:last-child td { border-bottom: none; }
 .pill.active { background: #eaf5ea; color: #2a6b2a; }
 .pill.inactive { background: #f2f2f2; color: #999; }
 .pill.online { background: #eaf5ea; color: #2a6b2a; }
-.pill.offline { background: #fbeaea; color: #8b1e1e; }
+.pill.offline { background: #fbeaea; color: #a33; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
 .modal-backdrop.open { display: flex; }
@@ -243,3 +245,13 @@ tr:last-child td { border-bottom: none; }
 .scene-sub { font-size: 14px; margin: 14px 0 8px; }
 .scene-sub span { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
 .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- Click 4 Tech Solutions branding ---- */
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand img { height: 40px; width: auto; display: block; }
+.brand h1 { font-size: 16px; font-weight: 600; color: var(--muted); border-left: 2px solid var(--border); padding-left: 14px; }
+.login-logo { display: block; width: 220px; max-width: 80%; height: auto; margin: 0 auto 16px; }
+.powered { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0 28px; }
+.powered img { height: 22px; vertical-align: middle; margin-left: 6px; }
+.powered a { color: inherit; text-decoration: none; }
+@media (max-width: 560px) { .brand h1 { display: none; } .brand img { height: 34px; } }

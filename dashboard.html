@@ -5,12 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Digital Signage — Dashboard</title>
 <link rel="stylesheet" href="assets/app.css">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<meta name="theme-color" content="#1f2533">
+
 <link rel="stylesheet" href="assets/menu.css">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;600;700&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;600;700&family=Roboto:wght@400;600;700&display=swap">
 </head>
 <body>
   <div class="topbar">
-    <h1>Digital Signage</h1>
+    <div class="brand"><img src="assets/logo.png" alt="Click 4 Tech Solutions"><h1>Digital Signage</h1></div>
     <div>
       <span class="who" id="whoami"></span>
       <button class="secondary small" onclick="logout()" style="margin-left:12px;">Log out</button>
@@ -130,6 +134,8 @@
       </div>
     </div>
   </div>
+
+  <div class="powered">Powered by <a href="https://click4techsolutions.com" target="_blank" rel="noopener"><img src="assets/logo.png" alt="Click 4 Tech Solutions"></a><br>IoT | WEB | MOBILE APP | NETWORK</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/schedule.js"></script>
