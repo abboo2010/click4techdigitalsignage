@@ -95,7 +95,9 @@ public class MainActivity extends Activity {
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         input.setSingleLine(true);
+        input.setBackgroundColor(Color.WHITE);
         input.setTextColor(Color.BLACK);
+        input.setPadding(24, 20, 24, 20);
         input.setHintTextColor(Color.GRAY);
         input.setHint("https://digitalsignage.click4techsolutions.com/player.html?screen=...");
         String old = savedUrl();
