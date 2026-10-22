@@ -637,4 +637,12 @@ async function sendHeartbeat() {
   }
 }
 
-init();
+// If start-up fails, show the reason on screen (instead of "Loading..." forever)
+// and try again, so a problem on one device can be seen and fixed.
+window.addEventListener("error", e => {
+  try { if (document.getElementById("stage-empty")) showFatal("Player error: " + (e.message || "unknown") + " (" + String(e.filename || "").split("/").pop() + ":" + (e.lineno || 0) + ")"); } catch (x) { /* ignore */ }
+});
+init().catch(err => {
+  try { showFatal("Could not start: " + (err && err.message ? err.message : err)); } catch (x) { /* ignore */ }
+  setTimeout(() => location.reload(), 30000);
+});
