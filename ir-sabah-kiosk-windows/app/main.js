@@ -68,6 +68,7 @@ function createMain() {
   mainWindow.once('ready-to-show', () => { mainWindow.show(); enforce(); log('main window shown'); });
   mainWindow.on('close', (e) => { if (!quitting) e.preventDefault(); });
   mainWindow.on('focus', raiseOverlays);
+  mainWindow.on('blur', () => setTimeout(refocusMain, 300));
   mainWindow.on('enter-full-screen', raiseOverlays);
   mainWindow.on('leave-full-screen', () => { if (!quitting) setTimeout(enforce, 200); });
 
@@ -120,7 +121,15 @@ function enforce() {
   mainWindow.setBounds(b);
   mainWindow.setFullScreen(true);
   mainWindow.setKiosk(true);
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');   // stays above the Windows taskbar even when not the active window
   raiseOverlays();
+}
+
+/* A fullscreen window only hides the taskbar while it is the active window */
+function refocusMain() {
+  if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+  if (prompt && !prompt.isDestroyed() && prompt.isVisible()) return;   // password box is open: leave focus there
+  if (!mainWindow.isFocused()) { mainWindow.show(); mainWindow.focus(); }
 }
 
 function raiseOverlays() {
@@ -136,7 +145,7 @@ function createHotspot() {
   hotspot = new BrowserWindow({
     x: b.x, y: b.y + b.height - size, width: size, height: size,
     frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true,
-    alwaysOnTop: true, show: false, hasShadow: false, focusable: true,
+    alwaysOnTop: true, show: false, hasShadow: false, focusable: false,   // never steals focus (a non-active kiosk window lets the taskbar reappear)
     webPreferences: { nodeIntegration: true, contextIsolation: false, sandbox: false }   // sandbox:false is required for require('electron') in data: pages
   });
   hotspot.setAlwaysOnTop(true, 'screen-saver');
@@ -228,7 +237,7 @@ function openPrompt() {
   prompt.on('closed', () => { prompt = null; clearTimeout(promptTimer); });
 }
 function armPromptTimer() { clearTimeout(promptTimer); promptTimer = setTimeout(closePrompt, 30000); }   // never leave it open
-function closePrompt() { clearTimeout(promptTimer); if (prompt && !prompt.isDestroyed()) prompt.hide(); }
+function closePrompt() { clearTimeout(promptTimer); if (prompt && !prompt.isDestroyed()) prompt.hide(); setTimeout(() => { refocusMain(); enforce(); }, 100); }
 
 ipcMain.on('prompt-cancel', () => { log('prompt cancelled'); closePrompt(); });
 ipcMain.on('prompt-submit', (e, pw) => {
@@ -260,6 +269,6 @@ app.whenReady().then(() => {
   createHotspot();
   try { globalShortcut.register('Control+Alt+X', () => { log('Ctrl+Alt+X'); openPrompt(); }); } catch (e) { log('shortcut failed: ' + e.message); }
   screen.on('display-metrics-changed', () => { if (!quitting) enforce(); });
-  setInterval(raiseOverlays, 3000);
+  setInterval(() => { refocusMain(); raiseOverlays(); }, 3000);
 });
 app.on('window-all-closed', () => { /* stay running: only the password exits */ });

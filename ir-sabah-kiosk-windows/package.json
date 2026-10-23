@@ -1,6 +1,6 @@
 {
   "name": "ir-sabah-kiosk",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "IR@SABAH Kiosk - Dr. Chandran Nadarajan",
   "author": "Click 4 Tech Solutions PLT",
   "main": "app/main.js",
