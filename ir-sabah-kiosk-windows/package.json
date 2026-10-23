@@ -1,0 +1,55 @@
+{
+  "name": "ir-sabah-kiosk",
+  "version": "2.0.0",
+  "description": "IR@SABAH Kiosk - Dr. Chandran Nadarajan",
+  "author": "Click 4 Tech Solutions PLT",
+  "main": "app/main.js",
+  "private": true,
+  "scripts": {
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "info.drchandranir.kiosk",
+    "productName": "IR@Sabah Kiosk",
+    "executableName": "IR-Sabah-Kiosk",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "app/**/*",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "kiosk-config.json",
+        "to": "kiosk-config.json"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "IR-Sabah-Kiosk-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": null
+  }
+}
