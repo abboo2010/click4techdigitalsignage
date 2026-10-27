@@ -14,9 +14,28 @@ android {
         versionName "1.0"
     }
 
+    // Fixed signing key (set by the GitHub workflow from repository secrets) so that
+    // every build is signed the same way and can be installed over the previous one.
+    // Without these variables (local builds) Android's default debug key is used.
+    def keystorePath = System.getenv("SIGNING_KEYSTORE_PATH")
+    signingConfigs {
+        if (keystorePath) {
+            release {
+                storeFile file(keystorePath)
+                storePassword System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (keystorePath) signingConfig signingConfigs.release
+        }
+        debug {
+            if (keystorePath) signingConfig signingConfigs.release
         }
     }
     compileOptions {
