@@ -257,6 +257,15 @@ function syncOfflineMedia(allMedia) {
     .catch(() => {});
 }
 
+// Photos used by menu items, in the same shape as media rows so they are stored for offline play too.
+function menuPhotoPaths() {
+  const seen = new Set();
+  (rawMenus || []).forEach(m => (m.categories || []).forEach(c => (c.items || []).forEach(i => {
+    if (i && i.image && !/^https?:\/\//.test(i.image)) seen.add(i.image);
+  })));
+  return Array.from(seen).map(p => ({ storage_path: p }));
+}
+
 // Fetches everything a screen can show. Which part plays when is decided per scene.
 async function loadContent(screenId) {
   const [mediaRes, menuRes, sceneRes] = await Promise.all([
@@ -268,7 +277,7 @@ async function loadContent(screenId) {
   if (mediaRes.error) return false;
   rawMedia = mediaRes.data || [];
   rawMenus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
-  syncOfflineMedia(rawMedia);   // keep every file of this screen stored on the device
+  syncOfflineMedia(rawMedia.concat(menuPhotoPaths()));   // keep every file of this screen (and its menu photos) stored on the device
 
   const rows = (sceneRes && !sceneRes.error && sceneRes.data) ? sceneRes.data.slice() : [];
   rows.sort((a, b) => ((a.sort_order || 0) - (b.sort_order || 0)) || String(a.created_at).localeCompare(String(b.created_at)));
@@ -314,7 +323,10 @@ function buildPlaylists(scene) {
         pageNo: i + 1,
         pageCount: pages.length,
         page,
-        menu: { title: menu.title, template: menu.template, accent: menu.accent, currency: menu.currency },
+        menu: {
+          title: menu.title, template: menu.template, accent: menu.accent, currency: menu.currency,
+          board_type: menu.board_type, languages: menu.languages, lang_mode: menu.lang_mode,
+        },
         duration_seconds: menu.duration_seconds,
       });
     });

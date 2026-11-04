@@ -115,6 +115,17 @@
   text-overflow: ellipsis;
 }
 
+/* Other-language line under an item's name (when all languages are shown together). */
+.m-alt {
+  margin-top: calc(var(--u) * 0.3);
+  font-size: calc(var(--u) * 2.4);
+  line-height: 1.2;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .m-item.sold { opacity: 0.4; }
 .m-item.sold .m-name { text-decoration: line-through; }
 .m-item.sold .m-price { font-size: calc(var(--u) * 2.4); letter-spacing: 0.1em; }
@@ -126,3 +137,137 @@
   font-size: calc(var(--u) * 2);
   opacity: 0.55;
 }
+
+/* ---------- Photo menu: a card per item (photo, name, price) ---------- */
+
+.menu-photos {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;         /* a slide with only a few cards sits in the middle instead of leaving a gap below */
+}
+.menu-photos .m-cat {
+  height: calc(var(--u) * 5.7);
+  margin-bottom: calc(var(--u) * 0.8);
+  padding-bottom: calc(var(--u) * 0.9);
+  font-size: calc(var(--u) * 2.8);
+}
+.p-row {
+  flex: none;
+  height: calc(var(--u) * 17.5 * var(--fill, 1));
+  margin-bottom: calc(var(--u) * 1.8);
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: calc(var(--u) * 3);
+}
+.p-card {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: calc(var(--u) * 1.4);
+  background: rgba(255, 255, 255, 0.08);
+}
+.menu-light .p-card { background: #ffffff; box-shadow: 0 calc(var(--u) * 0.2) calc(var(--u) * 1) rgba(0, 0, 0, 0.12); }
+.menu-bold .p-card  { background: rgba(0, 0, 0, 0.22); }
+
+.p-photo {
+  position: relative;
+  flex: none;
+  width: calc(var(--u) * 17.5 * (1 + (var(--fill, 1) - 1) * 0.5));   /* grows at half the rate of the card height */
+  height: 100%;
+  overflow: hidden;
+  background: var(--accent);
+}
+.p-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.p-photo.nophoto {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--u) * 7);
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-text));
+}
+.p-badge {
+  position: absolute;
+  left: calc(var(--u) * 0.8);
+  top: calc(var(--u) * 0.8);
+  max-width: calc(100% - var(--u) * 1.6);
+  box-sizing: border-box;
+  padding: calc(var(--u) * 0.3) calc(var(--u) * 1);
+  border-radius: calc(var(--u) * 0.8);
+  background: var(--accent);
+  color: #ffffff;
+  font-size: calc(var(--u) * 1.8);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 0 0 calc(var(--u) * 0.2) rgba(255, 255, 255, 0.85);
+}
+.menu-bold .p-badge { background: #ffffff; color: var(--accent); box-shadow: none; }
+
+.p-text {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: calc(var(--u) * 1.2) calc(var(--u) * 2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--u) * 0.3);
+  overflow: hidden;
+}
+.p-top {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.6);
+}
+.p-name {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: calc(var(--u) * 3.5);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;            /* a long name wraps to a second line before it is cut off */
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.p-price {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1);
+  font-size: calc(var(--u) * 3.6);
+  line-height: 1.2;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.p-price b { font-weight: 800; }
+.p-price s { font-size: calc(var(--u) * 2.3); font-weight: 400; opacity: 0.6; color: inherit; }
+.menu-dark .p-price { color: var(--accent-text, var(--accent)); }
+.menu-bold .p-price { color: #ffffff; }
+.p-alt {
+  font-size: calc(var(--u) * 2.4);
+  line-height: 1.2;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.p-desc {
+  font-size: calc(var(--u) * 2.1);
+  line-height: 1.2;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.p-card.sold { opacity: 0.45; }
+.p-card.sold .p-name { text-decoration: line-through; }
+.p-card.sold .p-price b { font-size: calc(var(--u) * 2.4); letter-spacing: 0.1em; }
