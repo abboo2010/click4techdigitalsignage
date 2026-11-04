@@ -33,6 +33,8 @@ let clockTimer = null;
 let layoutNow = "full";
 let scenes = [];           // this screen's scenes, in play order
 let rawMedia = [];         // every media item of the screen
+let rawQueues = [];       // every patient queue board of the screen
+let queueRun = null;      // the queue board currently drawn on screen
 let rawMenus = [];         // every menu board of the screen
 let activeScene = null;    // the scene playing now
 let sceneTimer = null;     // optional fixed time for a scene
@@ -271,15 +273,17 @@ function menuPhotoPaths() {
 
 // Fetches everything a screen can show. Which part plays when is decided per scene.
 async function loadContent(screenId) {
-  const [mediaRes, menuRes, sceneRes] = await Promise.all([
+  const [mediaRes, menuRes, sceneRes, queueRes] = await Promise.all([
     db.from("media_items").select("*").eq("screen_id", screenId).order("sort_order", { ascending: true }),
     // If menu boards / scenes have not been set up yet these simply return nothing.
     db.from("menu_boards").select("*").eq("screen_id", screenId),
     db.from("scenes").select("*").eq("screen_id", screenId),
+    db.from("queue_boards").select("*").eq("screen_id", screenId),
   ]);
   if (mediaRes.error) return false;
   rawMedia = mediaRes.data || [];
   rawMenus = (menuRes && !menuRes.error && menuRes.data) ? menuRes.data : [];
+  rawQueues = (queueRes && !queueRes.error && queueRes.data) ? queueRes.data : [];
   syncOfflineMedia(rawMedia.concat(menuPhotoPaths()));   // keep every file of this screen (and its menu photos) stored on the device
 
   const rows = (sceneRes && !sceneRes.error && sceneRes.data) ? sceneRes.data.slice() : [];
@@ -297,7 +301,8 @@ function inScene(item, scene) {
 
 function sceneHasContent(scene) {
   return rawMedia.some(m => inScene(m, scene) && m.zone !== "side" && isScheduledNow(m))
-      || rawMenus.some(m => inScene(m, scene) && isScheduledNow(m));
+      || rawMenus.some(m => inScene(m, scene) && isScheduledNow(m))
+      || rawQueues.some(q => inScene(q, scene));
 }
 
 // The playlists (main area and side panel) of one scene, sized for the layout applied right now.
@@ -309,7 +314,8 @@ function buildPlaylists(scene) {
 
   // Remember how many items exist, so the empty screen can say whether
   // nothing was uploaded or nothing is scheduled right now.
-  totalItems = mainMedia.length + menus.length;
+  const queues = rawQueues.filter(q => inScene(q, scene));
+  totalItems = mainMedia.length + menus.length + queues.length;
 
   // Only keep what is scheduled to play right now (Malaysia time).
   const entries = mainMedia.filter(item => isScheduledNow(item));
@@ -333,6 +339,17 @@ function buildPlaylists(scene) {
         },
         duration_seconds: menu.duration_seconds,
       });
+    });
+  });
+
+  // A patient queue board is one live slide.
+  queues.forEach(q => {
+    entries.push({
+      type: "queue",
+      id: q.id,
+      sort_order: q.sort_order,
+      queue: { id: q.id, title: q.title, template: q.template, accent: q.accent, chime: q.chime },
+      duration_seconds: q.duration_seconds,
     });
   });
 
@@ -483,13 +500,17 @@ function enableSound() {
 ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, enableSound));
 
 function clearStage() {
+  if (queueRun) { queueRun.stop(); queueRun = null; }
   stage.innerHTML = "";
 }
 
 function showItem(item) {
   clearStage();
   const url = item.storage_path ? publicMediaUrl(item.storage_path) : null;
-  if (item.type === "menu_page") {
+  if (item.type === "queue") {
+    queueRun = startQueueBoard(item.queue, stage, db);
+    scheduleAdvance((item.duration_seconds || 20) * 1000);
+  } else if (item.type === "menu_page") {
     const size = mainAreaSize();
     stage.appendChild(buildMenuPageEl(item.page, item.menu, {
       w: size.w,

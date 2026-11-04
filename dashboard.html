@@ -971,10 +971,18 @@
             <div><input type="file" id="file-${sc.id}-main" accept="image/*,video/*"></div>
             <div style="flex:0 0 auto;"><button class="secondary" onclick="uploadMedia('main', '${sc.id}')">Upload</button></div>
             <div style="flex:0 0 auto;"><button class="secondary" onclick="currentSceneId='${sc.id}'; openMenuEditor(null)">+ New menu board</button></div>
+            <div style="flex:0 0 auto;"><button class="secondary" onclick="openQueuePage()">Patient queue</button></div>
           </div>
           <div id="msg-${sc.id}-main" class="msg"></div>
           ${sc.layout !== "full" ? sceneSideHtml(sc) : ""}
         </div>`;
+    }
+
+    // The clinic staff page (Call next buttons) for the screen being edited.
+    function openQueuePage() {
+      let url = "queue.html?screen=" + encodeURIComponent(currentScreen.id);
+      if (adminView) url += "&org=" + encodeURIComponent(viewOrgId);
+      window.location.href = url;
     }
 
     function renderScenes() {

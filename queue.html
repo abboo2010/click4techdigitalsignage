@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Signage — Patient Queue</title>
+<link rel="stylesheet" href="assets/app.css">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<meta name="theme-color" content="#1f2533">
+<style>
+  .qs-bar { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+  .qs-bar > div { flex:1 1 180px; }
+  .qs-rooms { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; }
+  .qs-room { background:#fff; border:1px solid var(--border, #ddd); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .qs-room-head { display:flex; gap:8px; }
+  .qs-room-head input { flex:1; min-width:0; }
+  .qs-now { background:#eef7f6; border-radius:10px; padding:10px 14px; text-align:center; }
+  .qs-now small { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#557; }
+  .qs-now b { display:block; font-size:30px; line-height:1.2; word-break:break-word; min-height:36px; }
+  .qs-now.idle b { color:#aaa; }
+  .qs-call { font-size:20px; padding:16px 10px; width:100%; }
+  .qs-row { display:flex; gap:8px; }
+  .qs-row button { flex:1; }
+  .qs-add { display:flex; gap:8px; }
+  .qs-add input { flex:1; min-width:0; font-size:16px; }
+  .qs-wait { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; max-height:240px; overflow:auto; }
+  .qs-wait li { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 10px; background:#f6f6f8; border-radius:8px; }
+  .qs-wait li span.n { color:#888; width:22px; }
+  .qs-wait li span.t { flex:1; word-break:break-word; }
+  .qs-x { background:none; color:#a33; border:none; padding:2px 8px; font-size:18px; }
+  .qs-x:hover { background:#fde8e8; }
+  .qs-muted { color:#888; font-size:13px; }
+  .qs-settings { display:none; margin-top:12px; }
+  .qs-settings.open { display:block; }
+  .qs-settings .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><img src="assets/logo.png" alt="Click 4 Tech Solutions"><h1>Patient Queue</h1></div>
+    <div>
+      <a id="backLink" href="dashboard.html" style="margin-right:12px; font-size:14px;">&larr; Dashboard</a>
+      <span class="who" id="whoami"></span>
+      <button class="secondary small" onclick="logout()" style="margin-left:12px;">Log out</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card" id="msg" style="display:none;"></div>
+
+    <div class="card" id="pickCard" style="display:none;">
+      <div class="qs-bar">
+        <div id="screenWrap"><label for="screenSel">Screen</label><select id="screenSel" onchange="pickScreen(this.value)"></select></div>
+        <div id="boardWrap"><label for="boardSel">Queue board</label><select id="boardSel" onchange="pickBoard(this.value)"></select></div>
+        <div style="flex:0 0 auto;"><button class="secondary" onclick="newBoard()">+ New queue board</button></div>
+        <div style="flex:0 0 auto;"><button class="secondary" onclick="toggleSettings()">Board settings</button></div>
+      </div>
+
+      <div class="qs-settings" id="settings">
+        <div class="grid">
+          <div><label>Title on the TV</label><input type="text" id="sTitle"></div>
+          <div><label>Look</label>
+            <select id="sTemplate"><option value="light">Light</option><option value="dark">Dark</option><option value="bold">Bold colour</option></select></div>
+          <div><label>Accent colour</label><input type="color" id="sAccent" style="height:38px; width:100%;"></div>
+          <div><label>Seconds on screen</label><input type="number" id="sDur" min="5" max="600"></div>
+          <div><label>Play in scene</label><select id="sScene"></select></div>
+          <div><label>Chime when a patient is called</label><select id="sChime"><option value="1">On</option><option value="0">Off</option></select></div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button onclick="saveSettings()">Save settings</button>
+          <button class="danger" onclick="deleteBoard()">Delete this board</button>
+        </div>
+        <p class="qs-muted" style="margin:10px 0 0;">The chime plays on the TV. Browsers only allow sound after someone has clicked once on the TV's page.</p>
+      </div>
+    </div>
+
+    <div id="roomsArea"></div>
+  </div>
+
+  <script src="assets/vendor/supabase.js"></script>
+  <script src="assets/app.js"></script>
+  <script>
+    let myProfile = null, viewOrgId = null, adminView = false;
+    let screens = [], scenes = [], boards = [], board = null, rooms = [], waiting = {};
+    let timer = null, busy = false;
+
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+    function say(text, isError) {
+      const el = document.getElementById("msg");
+      if (!text) { el.style.display = "none"; return; }
+      el.style.display = "block";
+      el.style.background = isError ? "#fde8e8" : "#e8f6ee";
+      el.textContent = text;
+      if (!isError) setTimeout(() => { if (el.textContent === text) el.style.display = "none"; }, 3000);
+    }
+    function fail(error, what) {
+      const m = (error && error.message) || String(error);
+      if (/queue_(boards|rooms|waiting)|queue_snapshot|schema cache/i.test(m)) {
+        say("The queue tables are not set up yet. Run the step 12 SQL in Supabase first.", true);
+      } else say((what || "Something went wrong") + ": " + m, true);
+    }
+
+    (async () => {
+      const session = await requireSession();
+      if (!session) return;
+      myProfile = await getMyProfile();
+      if (!myProfile) { say("Your login isn't linked to an organization yet. Contact your administrator.", true); return; }
+      const { data: { user } } = await db.auth.getUser();
+      document.getElementById("whoami").textContent = user.email;
+
+      viewOrgId = myProfile.org_id;
+      const qs = new URLSearchParams(window.location.search);
+      if (myProfile.role === "admin" && qs.get("org")) {
+        adminView = true;
+        viewOrgId = qs.get("org");
+        document.getElementById("backLink").href = "dashboard.html?org=" + encodeURIComponent(viewOrgId);
+        document.getElementById("whoami").textContent = user.email + " (admin)";
+      }
+      if (!viewOrgId) { say("Open this page from the client's dashboard (Admin → Open dashboard).", true); return; }
+
+      const { data, error } = await db.from("screens").select("id,name").eq("org_id", viewOrgId).order("created_at");
+      if (error) return fail(error, "Failed to load screens");
+      screens = data || [];
+      if (!screens.length) { say("No screen has been set up for this organization yet.", true); return; }
+      document.getElementById("screenSel").innerHTML = screens.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+      document.getElementById("screenWrap").style.display = screens.length > 1 ? "" : "none";
+      document.getElementById("pickCard").style.display = "block";
+      const want = qs.get("screen");
+      const first = screens.find(s => s.id === want) || screens[0];
+      document.getElementById("screenSel").value = first.id;
+      pickScreen(first.id);
+    })();
+
+    async function pickScreen(id) {
+      clearTimeout(timer);
+      const [b, sc] = await Promise.all([
+        db.from("queue_boards").select("*").eq("screen_id", id).order("created_at"),
+        db.from("scenes").select("id,name,sort_order,created_at").eq("screen_id", id),
+      ]);
+      if (b.error) return fail(b.error, "Failed to load queue boards");
+      boards = b.data || [];
+      scenes = (sc.data || []).sort((x, y) => (x.sort_order || 0) - (y.sort_order || 0) || String(x.created_at).localeCompare(String(y.created_at)));
+      document.getElementById("sScene").innerHTML = scenes.length
+        ? scenes.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")
+        : '<option value="">Main</option>';
+      document.getElementById("boardSel").innerHTML = boards.map(x => `<option value="${x.id}">${esc(x.title)}</option>`).join("");
+      document.getElementById("boardWrap").style.display = boards.length > 1 ? "" : "none";
+      if (!boards.length) {
+        board = null; rooms = []; waiting = {};
+        document.getElementById("roomsArea").innerHTML =
+          '<div class="card">No queue board on this screen yet. <button onclick="newBoard()" style="margin-left:10px;">Create queue board</button></div>';
+        return;
+      }
+      pickBoard(boards[0].id);
+    }
+
+    function pickBoard(id) {
+      board = boards.find(b => b.id === id);
+      document.getElementById("boardSel").value = id;
+      fillSettings();
+      loadRooms(true);
+    }
+
+    function fillSettings() {
+      if (!board) return;
+      document.getElementById("sTitle").value = board.title;
+      document.getElementById("sTemplate").value = board.template;
+      document.getElementById("sAccent").value = board.accent || "#0e6e6e";
+      document.getElementById("sDur").value = board.duration_seconds;
+      document.getElementById("sChime").value = board.chime ? "1" : "0";
+      document.getElementById("sScene").value = board.scene_id || (scenes[0] ? scenes[0].id : "");
+    }
+    function toggleSettings() { document.getElementById("settings").classList.toggle("open"); }
+
+    async function newBoard() {
+      const screenId = document.getElementById("screenSel").value;
+      const title = prompt("Name of this queue board", "Patient Queue");
+      if (!title) return;
+      const { data, error } = await db.from("queue_boards").insert({
+        screen_id: screenId, scene_id: scenes[0] ? scenes[0].id : null, title: title.trim(),
+        sort_order: Date.now(),
+      }).select().single();
+      if (error) return fail(error, "Could not create the board");
+      await db.from("queue_rooms").insert({ board_id: data.id, name: "Room 1", sort_order: 1 });
+      say("Queue board created. It will appear on the TV within a minute.");
+      await pickScreen(screenId);
+      pickBoard(data.id);
+    }
+
+    async function saveSettings() {
+      if (!board) return;
+      const dur = Math.max(5, Math.min(600, parseInt(document.getElementById("sDur").value, 10) || 20));
+      const fields = {
+        title: document.getElementById("sTitle").value.trim() || "Patient Queue",
+        template: document.getElementById("sTemplate").value,
+        accent: document.getElementById("sAccent").value,
+        duration_seconds: dur,
+        chime: document.getElementById("sChime").value === "1",
+        scene_id: document.getElementById("sScene").value || null,
+      };
+      const { error } = await db.from("queue_boards").update(fields).eq("id", board.id);
+      if (error) return fail(error, "Could not save");
+      Object.assign(board, fields);
+      document.getElementById("boardSel").querySelector(`option[value="${board.id}"]`).textContent = fields.title;
+      say("Saved. The TV picks this up within a minute.");
+    }
+
+    async function deleteBoard() {
+      if (!board || !confirm("Delete this queue board and all its rooms and waiting patients?")) return;
+      const { error } = await db.from("queue_boards").delete().eq("id", board.id);
+      if (error) return fail(error, "Could not delete");
+      document.getElementById("settings").classList.remove("open");
+      await pickScreen(document.getElementById("screenSel").value);
+    }
+
+    // ---------- rooms ----------
+
+    async function loadRooms(force) {
+      clearTimeout(timer);
+      if (!board) return;
+      const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("#roomsArea") && document.activeElement.value;
+      const r = await db.from("queue_rooms").select("*").eq("board_id", board.id).order("sort_order").order("created_at");
+      if (r.error) return fail(r.error, "Failed to load rooms");
+      rooms = r.data || [];
+      waiting = {};
+      if (rooms.length) {
+        const w = await db.from("queue_waiting").select("*").in("room_id", rooms.map(x => x.id)).order("created_at").order("id");
+        if (w.error) return fail(w.error, "Failed to load waiting patients");
+        (w.data || []).forEach(x => (waiting[x.room_id] = waiting[x.room_id] || []).push(x));
+      }
+      if (force || !typing) renderRooms();
+      timer = setTimeout(() => loadRooms(false), 5000);
+    }
+
+    function renderRooms() {
+      const area = document.getElementById("roomsArea");
+      const cards = rooms.map(r => {
+        const w = waiting[r.id] || [];
+        return `
+        <div class="qs-room" data-id="${r.id}">
+          <div class="qs-room-head">
+            <input type="text" value="${esc(r.name)}" placeholder="Room name" onchange="saveRoom('${r.id}','name',this.value)">
+            <input type="text" value="${esc(r.doctor)}" placeholder="Doctor (optional)" onchange="saveRoom('${r.id}','doctor',this.value)">
+          </div>
+          <div class="qs-now ${r.current_label ? "" : "idle"}"><small>Now serving</small><b>${r.current_label ? esc(r.current_label) : "—"}</b></div>
+          <button class="qs-call" onclick="act('queue_call_next','${r.id}')">${w.length ? "Call next: " + esc(w[0].label) : "Call next"}</button>
+          <div class="qs-row">
+            <button class="secondary" onclick="act('queue_recall','${r.id}')" ${r.current_label ? "" : "disabled"}>Call again</button>
+            <button class="secondary" onclick="act('queue_clear','${r.id}')" ${r.current_label ? "" : "disabled"}>Done</button>
+          </div>
+          <div class="qs-add">
+            <input type="text" id="add-${r.id}" placeholder="Add patient (name or number)" maxlength="40"
+                   onkeydown="if(event.key==='Enter')addPatient('${r.id}')">
+            <button onclick="addPatient('${r.id}')">Add</button>
+          </div>
+          <div class="qs-muted">${w.length} waiting</div>
+          <ul class="qs-wait">${w.map((x, i) => `<li><span class="n">${i + 1}</span><span class="t">${esc(x.label)}</span><button class="qs-x" title="Remove" onclick="removePatient('${x.id}')">×</button></li>`).join("")}</ul>
+          <div><button class="secondary small" onclick="deleteRoom('${r.id}')">Remove this room</button></div>
+        </div>`;
+      }).join("");
+      area.innerHTML = `<div class="qs-rooms">${cards}</div>
+        <div style="margin-top:16px;"><button class="secondary" onclick="addRoom()">+ Add room</button></div>`;
+    }
+
+    async function act(fn, roomId) {
+      if (busy) return;
+      busy = true;
+      const { error } = await db.rpc(fn, { p_room: roomId });
+      busy = false;
+      if (error) return fail(error, "Could not update the queue");
+      loadRooms(true);
+    }
+
+    async function addPatient(roomId) {
+      const input = document.getElementById("add-" + roomId);
+      const label = input.value.trim();
+      if (!label) return;
+      input.value = "";
+      const { error } = await db.from("queue_waiting").insert({ room_id: roomId, label });
+      if (error) return fail(error, "Could not add the patient");
+      await loadRooms(true);
+      const again = document.getElementById("add-" + roomId);
+      if (again) again.focus();
+    }
+
+    async function removePatient(id) {
+      const { error } = await db.from("queue_waiting").delete().eq("id", id);
+      if (error) return fail(error, "Could not remove");
+      loadRooms(true);
+    }
+
+    async function saveRoom(id, field, value) {
+      const v = value.trim();
+      if (field === "name" && !v) { loadRooms(true); return; }
+      const { error } = await db.from("queue_rooms").update({ [field]: v }).eq("id", id);
+      if (error) fail(error, "Could not save");
+    }
+
+    async function addRoom() {
+      const next = rooms.length + 1;
+      const { error } = await db.from("queue_rooms").insert({ board_id: board.id, name: "Room " + next, sort_order: Date.now() });
+      if (error) return fail(error, "Could not add the room");
+      loadRooms(true);
+    }
+
+    async function deleteRoom(id) {
+      if (!confirm("Remove this room and its waiting patients?")) return;
+      const { error } = await db.from("queue_rooms").delete().eq("id", id);
+      if (error) return fail(error, "Could not remove the room");
+      loadRooms(true);
+    }
+  </script>
+</body>
+</html>

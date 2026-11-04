@@ -10,7 +10,7 @@
  * Only the player is affected. The dashboard and admin pages are left alone.
  */
 
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL = "signage-shell-" + VERSION;
 const DATA = "signage-data-" + VERSION;
 const MEDIA = "signage-media-" + VERSION;
@@ -22,7 +22,7 @@ const ANON_BEARER = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXB
 
 const SHELL_FILES = [
   "player.html", "assets/player.js", "assets/player.css", "assets/menu.js",
-  "assets/menu.css", "assets/schedule.js", "assets/fonts.js", "assets/vendor/supabase.js",
+  "assets/menu.css", "assets/queue.js", "assets/schedule.js", "assets/fonts.js", "assets/vendor/supabase.js",
 ];
 // Must match the Google Fonts link in player.html exactly.
 const FONTS_CSS = "https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;600;700&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@400;600;700&family=Poppins:wght@400;600;700&family=Roboto:wght@400;600;700&display=swap";
