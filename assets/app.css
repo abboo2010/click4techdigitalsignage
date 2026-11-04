@@ -176,6 +176,15 @@ tr:last-child td { border-bottom: none; }
 .mi-sold input { width: auto; margin: 0; }
 .mi-tools { display: inline-flex; gap: 2px; margin-left: auto; }
 
+/* Extra item details (photo, badge, old price, translations) */
+.mdetail { flex: 1 0 100%; background: #f4f1ea; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.mdetail-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mdetail-row input[type="text"] { flex: 1 1 180px; min-width: 0; }
+.mdetail-photo { display: flex; align-items: center; gap: 6px; flex: 1 0 100%; }
+.mi-thumb { width: 64px; height: 48px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
+.mi-nophoto { color: var(--muted); font-size: 12px; }
+.mi-upload { cursor: pointer; display: inline-block; }
+
 
 /* ---------- Screen layout picker ---------- */
 .layout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }

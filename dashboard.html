@@ -97,7 +97,22 @@
             </div>
           </div>
 
-          <label>Look</label>
+          <label for="mType">Board type</label>
+          <select id="mType" onchange="setBoardType(this.value)">
+            <option value="menu">Menu board (categories and items)</option>
+            <option value="special">Today's special / promo</option>
+            <option value="combo">Combo / set meal</option>
+            <option value="drinks">Drinks &amp; dessert</option>
+          </select>
+          <p id="mTypeHint" style="color:var(--muted); font-size:12px; margin-top:4px;"></p>
+
+          <label style="margin-top:14px;">Languages shown on screen</label>
+          <div class="day-row" id="mLangs"></div>
+          <div id="mLangModeRow" style="display:none; margin-top:6px;">
+            <div class="day-row" id="mLangMode"></div>
+          </div>
+
+          <label style="margin-top:14px;">Look</label>
           <div class="day-row" id="mLooks"></div>
 
           <div class="row">
@@ -1227,7 +1242,148 @@
       { id: "bold",  name: "Bold colour", chip: null },
     ];
 
-    function blankMenuItem() { return { name: "", price: "", desc: "", soldOut: false }; }
+    // What each board type is for, shown under the Board type picker.
+    const BOARD_TYPES = {
+      menu:    { hint: "A full menu: categories with items and prices. Photos are optional. Long menus split into several slides." },
+      special: { hint: "Today's special or a promo. Each item is shown big, one at a time, with its photo and price. Add a badge such as \"Limited time\" and an old price to show a discount." },
+      combo:   { hint: "Set meals and combos. Each item is one combo; write what is included in the description. Add a photo, a badge and an old price if you like." },
+      drinks:  { hint: "Drinks and desserts in a compact grid. Small photos work well here." },
+    };
+    const MENU_LANGS = [
+      { id: "en", name: "English" },
+      { id: "bm", name: "Bahasa Malaysia" },
+      { id: "zh", name: "中文 (Chinese)" },
+    ];
+
+    function blankMenuItem() {
+      return { name: "", price: "", desc: "", soldOut: false,
+               name_bm: "", name_zh: "", desc_bm: "", desc_zh: "", image: "", badge: "", was_price: "" };
+    }
+
+    // Copy an item from saved data (or a starter) into the shape the editor uses.
+    function normMenuItem(i) {
+      const b = blankMenuItem();
+      return {
+        name: i.name || "", price: i.price == null ? "" : String(i.price),
+        desc: i.desc || "", soldOut: !!i.soldOut,
+        name_bm: i.name_bm || "", name_zh: i.name_zh || "",
+        desc_bm: i.desc_bm || "", desc_zh: i.desc_zh || "",
+        image: i.image || "", badge: i.badge || "",
+        was_price: i.was_price == null ? "" : String(i.was_price),
+      };
+    }
+
+    // Shrink a photo before upload so TVs and offline players load it quickly (max 1280px wide/high).
+    function shrinkImage(file, maxSide) {
+      return new Promise(resolve => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+          if (scale === 1 && file.size < 600 * 1024) { URL.revokeObjectURL(url); resolve(file); return; }
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(blob => resolve(blob || file), "image/jpeg", 0.85);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+        img.src = url;
+      });
+    }
+
+    async function uploadItemPhoto(ci, ii, input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const msg = document.getElementById("mMsg");
+      if (!file.type.startsWith("image")) { showMessage(msg, "Please choose an image (JPG or PNG).", true); return; }
+      showMessage(msg, "Uploading photo...", false);
+      const blob = await shrinkImage(file, 1280);
+      const base = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "photo";
+      const path = `${viewOrgId}/${currentScreen.id}/menu/${Date.now()}-${base}.jpg`;
+      const { error } = await db.storage.from("media").upload(path, blob, { contentType: blob.type || "image/jpeg" });
+      if (error) { showMessage(msg, error.message, true); return; }
+      menuDraft.categories[ci].items[ii].image = path;
+      showMessage(msg, "", false);
+      renderMenuCats(); refreshMenuPreview();
+    }
+
+    function removeItemPhoto(ci, ii) {
+      menuDraft.categories[ci].items[ii].image = "";   // the file stays in storage; only the link is removed
+      renderMenuCats(); refreshMenuPreview();
+    }
+
+    function setBoardType(t) {
+      menuDraft.board_type = t;
+      document.getElementById("mTypeHint").textContent = (BOARD_TYPES[t] || BOARD_TYPES.menu).hint;
+      refreshMenuPreview();
+    }
+
+    function renderMenuLangs() {
+      document.getElementById("mLangs").innerHTML = MENU_LANGS.map(l => {
+        const on = menuDraft.languages.includes(l.id);
+        const locked = l.id === "en";   // English is always on, so a board is never empty
+        return `<label><input type="checkbox" ${on ? "checked" : ""} ${locked ? "disabled" : ""}
+                 onchange="toggleMenuLang('${l.id}', this.checked)"> ${l.name}</label>`;
+      }).join("");
+      const multi = menuDraft.languages.length > 1;
+      document.getElementById("mLangModeRow").style.display = multi ? "block" : "none";
+      document.getElementById("mLangMode").innerHTML = [
+        { id: "stack",  name: "Show all together (one under the other)" },
+        { id: "rotate", name: "Switch language on every slide" },
+      ].map(m => `<label><input type="radio" name="mLangModeRadio" value="${m.id}" ${menuDraft.lang_mode === m.id ? "checked" : ""}
+                   onchange="menuDraft.lang_mode='${m.id}'; refreshMenuPreview()"> ${m.name}</label>`).join("");
+    }
+
+    function toggleMenuLang(id, on) {
+      const set = new Set(menuDraft.languages);
+      if (on) set.add(id); else set.delete(id);
+      set.add("en");
+      menuDraft.languages = MENU_LANGS.map(l => l.id).filter(x => set.has(x));   // keep a fixed order
+      renderMenuLangs(); renderMenuCats(); refreshMenuPreview();
+    }
+
+    function toggleItemDetails(ci, ii) {
+      const it = menuDraft.categories[ci].items[ii];
+      it._open = !it._open;
+      renderMenuCats();
+    }
+
+    // A small dot on the Details button when the item already has a photo, badge or translation.
+    function itemExtrasMark(it) {
+      const has = it.image || it.badge || it.was_price || it.name_bm || it.name_zh || it.desc_bm || it.desc_zh;
+      return has ? " •" : "";
+    }
+
+    // The extra fields for one item: photo, badge, old price, and a name/description for each extra language.
+    function itemDetailsHtml(it, ci, ii) {
+      const e = escapeHtml, langs = menuDraft.languages;
+      const bind = field => `oninput="menuDraft.categories[${ci}].items[${ii}].${field}=this.value; refreshMenuPreview()"`;
+      const photo = it.image
+        ? `<img class="mi-thumb" src="${e(publicMediaUrl(it.image))}" alt="">
+           <button class="icon-btn" onclick="removeItemPhoto(${ci},${ii})">Remove photo</button>`
+        : `<span class="mi-nophoto">No photo</span>`;
+      const langRow = (code, label) => langs.includes(code) ? `
+        <div class="mdetail-row">
+          <input type="text" placeholder="Name in ${label}" value="${e(it["name_" + code])}" ${bind("name_" + code)}>
+          <input type="text" placeholder="Description in ${label} (optional)" value="${e(it["desc_" + code])}" ${bind("desc_" + code)}>
+        </div>` : "";
+      return `
+        <div class="mdetail">
+          <div class="mdetail-row">
+            <div class="mdetail-photo">${photo}
+              <label class="icon-btn mi-upload">${it.image ? "Change photo" : "Add photo"}
+                <input type="file" accept="image/*" style="display:none" onchange="uploadItemPhoto(${ci},${ii},this)">
+              </label>
+            </div>
+            <input type="text" placeholder="Badge, e.g. Best seller" value="${e(it.badge)}" ${bind("badge")}>
+            <input type="text" placeholder="Old price (crossed out), e.g. 18.00" value="${e(it.was_price)}" ${bind("was_price")}>
+          </div>
+          ${langRow("bm", "Bahasa Malaysia")}
+          ${langRow("zh", "Chinese")}
+        </div>`;
+    }
 
     async function loadMenus() {
       if (!currentScreen) return;
@@ -1247,18 +1403,19 @@
           id: existing.id, title: existing.title, template: existing.template || "dark",
           accent: existing.accent || "#8b1e1e", currency: existing.currency || "",
           duration_seconds: existing.duration_seconds || 12,
+          board_type: existing.board_type || "menu",
+          languages: (existing.languages && existing.languages.length) ? existing.languages : ["en"],
+          lang_mode: existing.lang_mode || "stack",
           categories: (existing.categories || []).map(c => ({
             name: c.name || "",
-            items: (c.items || []).map(i => ({
-              name: i.name || "", price: i.price == null ? "" : String(i.price),
-              desc: i.desc || "", soldOut: !!i.soldOut,
-            })),
+            items: (c.items || []).map(normMenuItem),
           })),
         };
         if (!menuDraft.categories.length) menuDraft.categories.push({ name: "", items: [blankMenuItem()] });
       } else {
         menuDraft = {
           id: null, title: "", template: "dark", accent: "#8b1e1e", currency: "RM", duration_seconds: 12,
+          board_type: "menu", languages: ["en"], lang_mode: "stack",
           categories: [{ name: "", items: [blankMenuItem()] }],
         };
       }
@@ -1273,8 +1430,11 @@
       document.getElementById("mCurrency").value = menuDraft.currency;
       document.getElementById("mAccent").value = menuDraft.accent;
       document.getElementById("mDuration").value = menuDraft.duration_seconds;
+      document.getElementById("mType").value = menuDraft.board_type;
+      document.getElementById("mTypeHint").textContent = (BOARD_TYPES[menuDraft.board_type] || BOARD_TYPES.menu).hint;
       showMessage(document.getElementById("mMsg"), "", false);
       renderMenuLooks();
+      renderMenuLangs();
       renderMenuCats();
       document.getElementById("menuModal").classList.add("open");
       renderMenuPreview();
@@ -1286,7 +1446,7 @@
       menuDraft.title = st.title; menuDraft.template = st.template; menuDraft.accent = st.accent;
       menuDraft.categories = st.categories.map(c => ({
         name: c.name,
-        items: c.items.map(i => ({ name: i.name, price: i.price || "", desc: i.desc || "", soldOut: false })),
+        items: c.items.map(i => normMenuItem(Object.assign({}, i, { soldOut: false }))),
       }));
       document.getElementById("mTitle").value = menuDraft.title;
       document.getElementById("mAccent").value = menuDraft.accent;
@@ -1330,10 +1490,12 @@
               <label class="mi-sold"><input type="checkbox" ${it.soldOut ? "checked" : ""}
                      onchange="menuDraft.categories[${ci}].items[${ii}].soldOut=this.checked; refreshMenuPreview()"> Sold out</label>
               <span class="mi-tools">
+                <button class="icon-btn" title="Photo, badge, old price and translations" onclick="toggleItemDetails(${ci},${ii})">${it._open ? "Hide details" : "Details" + itemExtrasMark(it)}</button>
                 <button class="icon-btn" title="Move up" onclick="moveItem(${ci},${ii},-1)">↑</button>
                 <button class="icon-btn" title="Move down" onclick="moveItem(${ci},${ii},1)">↓</button>
                 <button class="icon-btn" title="Remove" onclick="delItem(${ci},${ii})">✕</button>
               </span>
+              ${it._open ? itemDetailsHtml(it, ci, ii) : ""}
             </div>`).join("")}
           <button class="small secondary" style="margin-top:8px;" onclick="addItem(${ci})">+ Add item</button>
         </div>`).join("");
@@ -1420,7 +1582,13 @@
       for (const c of d.categories) {
         const name = c.name.trim();
         const items = c.items
-          .map(i => ({ name: i.name.trim(), price: String(i.price || "").trim(), desc: (i.desc || "").trim(), soldOut: !!i.soldOut }))
+          .map(i => {
+            const t = v => String(v == null ? "" : v).trim();
+            const out = { name: t(i.name), price: t(i.price), desc: t(i.desc), soldOut: !!i.soldOut };
+            // Optional extras are saved only when filled in, so simple menus stay small.
+            ["name_bm", "name_zh", "desc_bm", "desc_zh", "image", "badge", "was_price"].forEach(k => { if (t(i[k])) out[k] = t(i[k]); });
+            return out;
+          })
           .filter(i => i.name);
         if (!name && !items.length) continue;                       // empty block: ignore
         if (!name) { showMessage(msg, "Give every category a name, for example Coffee.", true); return; }
@@ -1433,6 +1601,9 @@
       const row = {
         title, template: d.template, accent: d.accent,
         currency: (d.currency || "").trim(), categories: cats, duration_seconds: secs,
+        board_type: d.board_type || "menu",
+        languages: (d.languages && d.languages.length) ? d.languages : ["en"],
+        lang_mode: d.lang_mode || "stack",
       };
 
       const btn = document.getElementById("mSaveBtn");
