@@ -1585,6 +1585,10 @@
           </div>
           ${c.items.map((it, ii) => `
             <div class="mitem">
+              <label class="mi-photo" title="${it.image ? "Change photo" : "Add a photo of this item"}">
+                ${it.image ? `<img src="${e(publicMediaUrl(it.image))}" alt="">` : `<span>+ Photo</span>`}
+                <input type="file" accept="image/*" style="display:none" onchange="uploadItemPhoto(${ci},${ii},this)">
+              </label>
               <input type="text" class="mi-name" placeholder="Item name" value="${e(it.name)}"
                      oninput="menuDraft.categories[${ci}].items[${ii}].name=this.value; refreshMenuPreview()">
               <input type="text" class="mi-price" placeholder="Price" value="${e(it.price)}"
