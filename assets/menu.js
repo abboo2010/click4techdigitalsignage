@@ -90,7 +90,7 @@ function menuMetrics(w, fullH) {
   const u = portrait ? w * 0.0085 : Math.min(fullH / 100, w * 0.0056);
   const columns = portrait ? 1 : 2;
   const cap = Math.max(25, stageH / u - MENU_RESERVED);   // usable column height in u
-  return { u, columns, cap };
+  return { u, columns, cap, portrait };
 }
 
 function menuItemCost(it, menu) {
@@ -288,8 +288,21 @@ function buildMenuPageEl(page, menu, opts) {
     </div>`;
   }
 
+  // Header: just the title, or (when the board has a restaurant name and/or logo) logo + name above the title.
+  const brandName = String(menu.restaurant_name || "").trim();
+  const logoUrl = menuImageUrl(menu.logo_path);
+  const header = (brandName || logoUrl)
+    ? `<div class="menu-header has-brand${m.portrait ? " portrait" : ""}">
+         ${logoUrl ? `<img class="menu-logo" src="${menuEsc(logoUrl)}" alt="" onerror="this.remove()">` : ""}
+         <div class="menu-head-text">
+           ${brandName ? `<div class="menu-brand">${menuEsc(brandName)}</div>` : ""}
+           <div class="menu-title">${menuEsc(menu.title || "Menu")}</div>
+         </div>
+       </div>`
+    : `<div class="menu-header"><div class="menu-title">${menuEsc(menu.title || "Menu")}</div></div>`;
+
   root.innerHTML = `
-    <div class="menu-header"><div class="menu-title">${menuEsc(menu.title || "Menu")}</div></div>
+    ${header}
     ${body}
     ${opts.pageCount > 1 ? `<div class="menu-page">${opts.pageNo} / ${opts.pageCount}</div>` : ""}`;
   return root;

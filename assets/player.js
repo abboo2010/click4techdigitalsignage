@@ -260,9 +260,12 @@ function syncOfflineMedia(allMedia) {
 // Photos used by menu items, in the same shape as media rows so they are stored for offline play too.
 function menuPhotoPaths() {
   const seen = new Set();
-  (rawMenus || []).forEach(m => (m.categories || []).forEach(c => (c.items || []).forEach(i => {
-    if (i && i.image && !/^https?:\/\//.test(i.image)) seen.add(i.image);
-  })));
+  (rawMenus || []).forEach(m => {
+    if (m.logo_path && !/^https?:\/\//.test(m.logo_path)) seen.add(m.logo_path);
+    (m.categories || []).forEach(c => (c.items || []).forEach(i => {
+      if (i && i.image && !/^https?:\/\//.test(i.image)) seen.add(i.image);
+    }));
+  });
   return Array.from(seen).map(p => ({ storage_path: p }));
 }
 
@@ -326,6 +329,7 @@ function buildPlaylists(scene) {
         menu: {
           title: menu.title, template: menu.template, accent: menu.accent, currency: menu.currency,
           board_type: menu.board_type, languages: menu.languages, lang_mode: menu.lang_mode,
+          restaurant_name: menu.restaurant_name, logo_path: menu.logo_path,
         },
         duration_seconds: menu.duration_seconds,
       });

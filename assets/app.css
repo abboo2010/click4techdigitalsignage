@@ -184,6 +184,7 @@ tr:last-child td { border-bottom: none; }
 .mi-thumb { width: 64px; height: 48px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
 .mi-nophoto { color: var(--muted); font-size: 12px; }
 .mi-upload { cursor: pointer; display: inline-block; }
+.mlogo-thumb { width: auto; max-width: 140px; height: 48px; object-fit: contain; background: #f5f2ec; padding: 4px; box-sizing: border-box; }
 
 
 /* ---------- Screen layout picker ---------- */

@@ -97,7 +97,13 @@
             </div>
           </div>
 
-          <label for="mType">Board type</label>
+          <label for="mBrand" style="margin-top:14px;">Restaurant name (optional, shown above the title)</label>
+          <input type="text" id="mBrand" placeholder="e.g. Kopitiam Sabah" maxlength="60"
+                 oninput="menuDraft.restaurant_name=this.value; refreshMenuPreview()">
+          <label style="margin-top:14px;">Restaurant logo (optional)</label>
+          <div id="mLogoRow" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"></div>
+
+          <label for="mType" style="margin-top:14px;">Board type</label>
           <select id="mType" onchange="setBoardType(this.value)">
             <option value="menu">Menu board (categories and items)</option>
             <option value="special">Today's special / promo</option>
@@ -1314,6 +1320,87 @@
       renderMenuCats(); refreshMenuPreview();
     }
 
+    // ----- Restaurant logo (shown in the header of this menu board) -----
+
+    // Keep transparency: logos stay PNG (or SVG as-is) and are only shrunk when large (max 600px).
+    function shrinkLogo(file) {
+      return new Promise(resolve => {
+        if (file.type === "image/svg+xml") { resolve(file); return; }
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const scale = Math.min(1, 600 / Math.max(img.width, img.height));
+          if (scale === 1 && file.size < 800 * 1024) { URL.revokeObjectURL(url); resolve(file); return; }
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(blob => resolve(blob || file), "image/png");
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+        img.src = url;
+      });
+    }
+
+    function logoExt(type) { return type === "image/svg+xml" ? "svg" : type === "image/jpeg" ? "jpg" : "png"; }
+
+    async function saveMenuLogoBlob(blob) {
+      const path = `${viewOrgId}/${currentScreen.id}/menu/logo-${Date.now()}.${logoExt(blob.type)}`;
+      const { error } = await db.storage.from("media").upload(path, blob, { contentType: blob.type || "image/png" });
+      if (error) return { error };
+      return { path };
+    }
+
+    async function uploadMenuLogo(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const msg = document.getElementById("mMsg");
+      if (!file.type.startsWith("image")) { showMessage(msg, "Please choose an image file (PNG, JPG or SVG).", true); return; }
+      showMessage(msg, "Uploading logo...", false);
+      const res = await saveMenuLogoBlob(await shrinkLogo(file));
+      if (res.error) { showMessage(msg, res.error.message, true); return; }
+      menuDraft.logo_path = res.path;
+      showMessage(msg, "", false);
+      renderMenuLogo(); refreshMenuPreview();
+    }
+
+    // Copy the screen's own logo (Corporate logo card) so the menu keeps it even if the screen logo is replaced later.
+    async function useScreenLogo() {
+      const msg = document.getElementById("mMsg");
+      if (!currentScreen || !currentScreen.logo_path) return;
+      showMessage(msg, "Copying the screen logo...", false);
+      try {
+        const blob = await (await fetch(publicMediaUrl(currentScreen.logo_path))).blob();
+        const res = await saveMenuLogoBlob(blob);
+        if (res.error) { showMessage(msg, res.error.message, true); return; }
+        menuDraft.logo_path = res.path;
+        showMessage(msg, "", false);
+        renderMenuLogo(); refreshMenuPreview();
+      } catch (e) {
+        showMessage(msg, "Could not copy the screen logo. Please upload the logo file instead.", true);
+      }
+    }
+
+    function removeMenuLogo() {
+      menuDraft.logo_path = "";                // the file stays in storage; only the link is removed
+      renderMenuLogo(); refreshMenuPreview();
+    }
+
+    function renderMenuLogo() {
+      const d = menuDraft;
+      document.getElementById("mLogoRow").innerHTML = `
+        ${d.logo_path
+          ? `<img class="mi-thumb mlogo-thumb" src="${escapeHtml(publicMediaUrl(d.logo_path))}" alt="">`
+          : `<span class="mi-nophoto">No logo</span>`}
+        <label class="icon-btn mi-upload">${d.logo_path ? "Change logo" : "Add logo"}
+          <input type="file" accept="image/*" style="display:none" onchange="uploadMenuLogo(this)">
+        </label>
+        ${d.logo_path ? `<button class="icon-btn" onclick="removeMenuLogo()">Remove</button>` : ""}
+        ${currentScreen && currentScreen.logo_path && !d.logo_path
+          ? `<button class="icon-btn" onclick="useScreenLogo()">Use this screen's logo</button>` : ""}`;
+    }
+
     function setBoardType(t) {
       menuDraft.board_type = t;
       document.getElementById("mTypeHint").textContent = (BOARD_TYPES[t] || BOARD_TYPES.menu).hint;
@@ -1406,6 +1493,9 @@
           board_type: existing.board_type || "menu",
           languages: (existing.languages && existing.languages.length) ? existing.languages : ["en"],
           lang_mode: existing.lang_mode || "stack",
+          restaurant_name: existing.restaurant_name || "",
+          logo_path: existing.logo_path || "",
+          hasBrandCols: "restaurant_name" in existing,   // false until the step 11 SQL has been run
           categories: (existing.categories || []).map(c => ({
             name: c.name || "",
             items: (c.items || []).map(normMenuItem),
@@ -1416,8 +1506,12 @@
         menuDraft = {
           id: null, title: "", template: "dark", accent: "#8b1e1e", currency: "RM", duration_seconds: 12,
           board_type: "menu", languages: ["en"], lang_mode: "stack",
+          restaurant_name: "", logo_path: "", hasBrandCols: false,
           categories: [{ name: "", items: [blankMenuItem()] }],
         };
+        // A new board starts with the same restaurant name and logo as the screen's latest board.
+        const prev = menuCache.slice().reverse().find(m => m.restaurant_name || m.logo_path);
+        if (prev) { menuDraft.restaurant_name = prev.restaurant_name || ""; menuDraft.logo_path = prev.logo_path || ""; }
       }
       menuPreviewPage = 0;
       // Starter templates are offered only when creating a new menu.
@@ -1430,6 +1524,8 @@
       document.getElementById("mCurrency").value = menuDraft.currency;
       document.getElementById("mAccent").value = menuDraft.accent;
       document.getElementById("mDuration").value = menuDraft.duration_seconds;
+      document.getElementById("mBrand").value = menuDraft.restaurant_name;
+      renderMenuLogo();
       document.getElementById("mType").value = menuDraft.board_type;
       document.getElementById("mTypeHint").textContent = (BOARD_TYPES[menuDraft.board_type] || BOARD_TYPES.menu).hint;
       showMessage(document.getElementById("mMsg"), "", false);
@@ -1605,6 +1701,13 @@
         languages: (d.languages && d.languages.length) ? d.languages : ["en"],
         lang_mode: d.lang_mode || "stack",
       };
+      // Name and logo are only sent when there is something to save (or the columns already exist),
+      // so saving keeps working on a database that has not had the step 11 SQL yet.
+      const brandName = (d.restaurant_name || "").trim();
+      if (brandName || d.logo_path || d.hasBrandCols) {
+        row.restaurant_name = brandName;
+        row.logo_path = d.logo_path || null;
+      }
 
       const btn = document.getElementById("mSaveBtn");
       btn.disabled = true;
@@ -1613,7 +1716,11 @@
         : await db.from("menu_boards").insert(Object.assign({ screen_id: currentScreen.id, sort_order: Date.now(), scene_id: currentSceneId }, row)).select();
       btn.disabled = false;
 
-      if (res.error) { showMessage(msg, res.error.message, true); return; }
+      if (res.error) {
+        const missingCol = /restaurant_name|logo_path/.test(res.error.message || "");
+        showMessage(msg, missingCol ? "The restaurant name and logo need a one-time database update (step 11 SQL). Ask your administrator to run it." : res.error.message, true);
+        return;
+      }
       if (!res.data || !res.data.length) { showMessage(msg, "Could not save. Please contact your administrator.", true); return; }
       closeMenuEditor();
       await loadMenus();
